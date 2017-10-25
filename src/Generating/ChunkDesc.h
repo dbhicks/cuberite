@@ -10,7 +10,6 @@
 #pragma once
 
 #include "../BlockArea.h"
-#include "../ChunkDef.h"
 #include "../Cuboid.h"
 
 
@@ -232,7 +231,7 @@ private:
 	cChunkDef::BiomeMap     m_BiomeMap;
 	cBlockArea              m_BlockArea;
 	cChunkDef::HeightMap    m_HeightMap;
-	cEntityList             m_Entities;       // Individual entities are NOT owned by this object!
+	cEntityList             m_Entities;
 	cBlockEntities          m_BlockEntities;  // Individual block entities are NOT owned by this object!
 
 	bool m_bUseDefaultBiomes;

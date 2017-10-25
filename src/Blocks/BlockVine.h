@@ -1,8 +1,8 @@
 #pragma once
 
 #include "BlockHandler.h"
-#include "MetaRotator.h"
-#include "Bindings/PluginManager.h"
+
+
 
 
 
@@ -16,7 +16,7 @@ public:
 	}
 
 	virtual bool GetPlacementBlockTypeMeta(
-		cChunkInterface & a_ChunkInterface, cPlayer * a_Player,
+		cChunkInterface & a_ChunkInterface, cPlayer & a_Player,
 		int a_BlockX, int a_BlockY, int a_BlockZ, eBlockFace a_BlockFace,
 		int a_CursorX, int a_CursorY, int a_CursorZ,
 		BLOCKTYPE & a_BlockType, NIBBLETYPE & a_BlockMeta
@@ -159,11 +159,11 @@ public:
 			// Wake up the simulators for this block:
 			int BlockX = a_RelX + a_Chunk.GetPosX() * cChunkDef::Width;
 			int BlockZ = a_RelZ + a_Chunk.GetPosZ() * cChunkDef::Width;
-			a_Chunk.GetWorld()->GetSimulatorManager()->WakeUp(BlockX, a_RelY, BlockZ, &a_Chunk);
+			a_Chunk.GetWorld()->GetSimulatorManager()->WakeUp({BlockX, a_RelY, BlockZ}, &a_Chunk);
 		}
 	}
 
-	virtual bool DoesIgnoreBuildCollision(void) override
+	virtual bool DoesIgnoreBuildCollision(cChunkInterface & a_ChunkInterface, Vector3i a_Pos, cPlayer & a_Player, NIBBLETYPE a_Meta) override
 	{
 		return true;
 	}

@@ -41,7 +41,6 @@ public:
 		m_ItemCount(0),
 		m_ItemDamage(0),
 		m_CustomName(""),
-		m_Lore(""),
 		m_RepairCost(0),
 		m_FireworkItem(),
 		m_ItemColor()
@@ -56,14 +55,14 @@ public:
 		short a_ItemDamage = 0,
 		const AString & a_Enchantments = "",
 		const AString & a_CustomName = "",
-		const AString & a_Lore = ""
+		const AStringVector & a_LoreTable = {}
 	) :
 		m_ItemType    (a_ItemType),
 		m_ItemCount   (a_ItemCount),
 		m_ItemDamage  (a_ItemDamage),
 		m_Enchantments(a_Enchantments),
 		m_CustomName  (a_CustomName),
-		m_Lore        (a_Lore),
+		m_LoreTable   (a_LoreTable),
 		m_RepairCost  (0),
 		m_FireworkItem(),
 		m_ItemColor()
@@ -81,20 +80,10 @@ public:
 
 	// The constructor is disabled in code, because the compiler generates it anyway,
 	// but it needs to stay because ToLua needs to generate the binding for it
-	#if 0
+	#ifdef TOLUA_EXPOSITION
 
 	/** Creates an exact copy of the item */
-	cItem(const cItem & a_CopyFrom) :
-		m_ItemType    (a_CopyFrom.m_ItemType),
-		m_ItemCount   (a_CopyFrom.m_ItemCount),
-		m_ItemDamage  (a_CopyFrom.m_ItemDamage),
-		m_Enchantments(a_CopyFrom.m_Enchantments),
-		m_CustomName  (a_CopyFrom.m_CustomName),
-		m_Lore        (a_CopyFrom.m_Lore),
-		m_RepairCost  (a_CopyFrom.m_RepairCost),
-		m_FireworkItem(a_CopyFrom.m_FireworkItem)
-	{
-	}
+	cItem(const cItem & a_CopyFrom);
 
 	#endif
 
@@ -106,7 +95,7 @@ public:
 		m_ItemDamage = 0;
 		m_Enchantments.Clear();
 		m_CustomName = "";
-		m_Lore = "";
+		m_LoreTable.clear();
 		m_RepairCost = 0;
 		m_FireworkItem.EmptyData();
 		m_ItemColor.Clear();
@@ -137,7 +126,7 @@ public:
 			(m_ItemDamage == a_Item.m_ItemDamage) &&
 			(m_Enchantments == a_Item.m_Enchantments) &&
 			(m_CustomName == a_Item.m_CustomName) &&
-			(m_Lore == a_Item.m_Lore) &&
+			(m_LoreTable == a_Item.m_LoreTable) &&
 			m_FireworkItem.IsEqualTo(a_Item.m_FireworkItem)
 		);
 	}
@@ -151,12 +140,12 @@ public:
 
 	bool IsBothNameAndLoreEmpty(void) const
 	{
-		return (m_CustomName.empty() && m_Lore.empty());
+		return (m_CustomName.empty() && m_LoreTable.empty());
 	}
 
 
 	bool IsCustomNameEmpty(void) const { return (m_CustomName.empty()); }
-	bool IsLoreEmpty(void) const { return (m_Lore.empty()); }
+	bool IsLoreEmpty(void) const { return (m_LoreTable.empty()); }
 
 	/** Returns a copy of this item with m_ItemCount set to 1. Useful to preserve enchantments etc. on stacked items */
 	cItem CopyOne(void) const;
@@ -190,9 +179,9 @@ public:
 	void FromJson(const Json::Value & a_Value);
 
 	/** Returns true if the specified item type is enchantable.
-	If WithBook is true, the function is used in the anvil inventory with book enchantments.
+	If FromBook is true, the function is used in the anvil inventory with book enchantments.
 	So it checks the "only book enchantments" too. Example: You can only enchant a hoe with a book. */
-	static bool IsEnchantable(short a_ItemType, bool a_WithBook = false);  // tolua_export
+	static bool IsEnchantable(short a_ItemType, bool a_FromBook = false);  // tolua_export
 
 	/** Returns the enchantability of the item. When the item hasn't a enchantability, it will returns 0 */
 	int GetEnchantability();  // tolua_export
@@ -201,6 +190,19 @@ public:
 	Returns true if the item was enchanted, false if not (not enchantable / too many enchantments already). */
 	bool EnchantByXPLevels(int a_NumXPLevels);  // tolua_export
 
+	/** Adds this specific enchantment to this item, returning the cost.
+	FromBook specifies whether the enchantment should be treated as coming
+	from a book. If true, then the cost returned uses the book values, if
+	false it uses the normal item multipliers. */
+	int AddEnchantment(int a_EnchantmentID, unsigned int a_Level, bool a_FromBook);  // tolua_export
+
+	/** Adds the enchantments on a_Other to this item, returning the
+	XP cost of the transfer. */
+	int AddEnchantmentsFromItem(const cItem & a_Other);  // tolua_export
+
+	/** Returns whether or not this item is allowed to have the given enchantment. Note: Does not check whether the enchantment is exclusive with the current enchantments on the item. */
+	bool CanHaveEnchantment(int a_EnchantmentID);
+
 	// tolua_begin
 
 	short          m_ItemType;
@@ -208,7 +210,12 @@ public:
 	short          m_ItemDamage;
 	cEnchantments  m_Enchantments;
 	AString        m_CustomName;
-	AString        m_Lore;
+
+	// tolua_end
+
+	AStringVector  m_LoreTable;  // Exported in ManualBindings.cpp
+
+	// tolua_begin
 
 	int            m_RepairCost;
 	cFireworkItem  m_FireworkItem;

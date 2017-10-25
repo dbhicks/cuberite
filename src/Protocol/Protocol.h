@@ -11,23 +11,19 @@
 #pragma once
 
 #include "../Defines.h"
-#include "../Endianness.h"
 #include "../Scoreboard.h"
-#include "../Map.h"
 #include "../ByteBuffer.h"
 #include "../EffectID.h"
 
-#include <array>
 
 
 
 
+class cMap;
 class cExpOrb;
 class cPlayer;
 class cEntity;
 class cWindow;
-class cInventory;
-class cPawn;
 class cPickup;
 class cPainting;
 class cWorld;
@@ -59,6 +55,78 @@ public:
 	}
 
 	virtual ~cProtocol() {}
+
+	/** A list of all outgoing packets */
+	enum eOutgoingPackets
+	{
+		sendAttachEntity = 0,
+		sendBlockAction,
+		sendBlockBreakAnim,
+		sendBlockChange,
+		sendBlockChanges,
+		sendCameraSetTo,
+		sendChatRaw,
+		sendCollectEntity,
+		sendDestroyEntity,
+		sendDifficulty,
+		sendDisconnectDuringLogin,
+		sendDisconnectDuringGame,
+		sendDisplayObjective,
+		sendEditSign,
+		sendEntityAnimation,
+		sendEntityEffect,
+		sendEntityEquipment,
+		sendEntityHeadLook,
+		sendEntityLook,
+		sendEntityMeta,
+		sendEntityProperties,
+		sendEntityRelMove,
+		sendEntityRelMoveLook,
+		sendEntityStatus,
+		sendEntityVelocity,
+		sendExperience,
+		sendExperienceOrb,
+		sendExplosion,
+		sendGameMode,
+		sendHealth,
+		sendInventorySlot,
+		sendJoinGame,
+		sendKeepAlive,
+		sendLeashEntity,
+		sendMapData,
+		sendPaintingSpawn,
+		sendParticleEffect,
+		sendPlayerAbilities,
+		sendPlayerList,
+		sendPlayerMaxSpeed,
+		sendPlayerMoveLook,
+		sendPlayerSpawn,
+		sendPluginMessage,
+		sendRemoveEntityEffect,
+		sendRespawn,
+		sendScoreboardObjective,
+		sendScoreUpdate,
+		sendSpawnObject,
+		sendSoundEffect,
+		sendSoundParticleEffect,
+		sendSpawnGlobalEntity,
+		sendSpawnMob,
+		sendSpawnPosition,
+		sendStatistics,
+		sendTabCompletion,
+		sendTeleportEntity,
+		sendTimeUpdate,
+		sendTitle,
+		sendUnloadChunk,
+		sendUpdateBlockEntity,
+		sendUpdateSign,
+		sendUseBed,
+		sendWeather,
+		sendWindowItems,
+		sendWindowClose,
+		sendWindowOpen,
+		sendWindowProperty
+	};
 
 	/** Called when client sends some data */
 	virtual void DataReceived(const char * a_Data, size_t a_Size) = 0;
@@ -95,6 +163,7 @@ public:
 	virtual void SendHideTitle                  (void) = 0;
 	virtual void SendInventorySlot              (char a_WindowID, short a_SlotNum, const cItem & a_Item) = 0;
 	virtual void SendKeepAlive                  (UInt32 a_PingID) = 0;
+	virtual void SendLeashEntity                (const cEntity & a_Entity, const cEntity & a_EntityLeashedTo) = 0;
 	virtual void SendLogin                      (const cPlayer & a_Player, const cWorld & a_World) = 0;
 	virtual void SendLoginSuccess               (void) = 0;
 	virtual void SendMapData                    (const cMap & a_Map, int a_DataStartX, int a_DataStartY) = 0;
@@ -138,6 +207,7 @@ public:
 	virtual void SendThunderbolt                (int a_BlockX, int a_BlockY, int a_BlockZ) = 0;
 	virtual void SendTitleTimes                 (int a_FadeInTicks, int a_DisplayTicks, int a_FadeOutTicks) = 0;
 	virtual void SendTimeUpdate                 (Int64 a_WorldAge, Int64 a_TimeOfDay, bool a_DoDaylightCycle) = 0;
+	virtual void SendUnleashEntity              (const cEntity & a_Entity) = 0;
 	virtual void SendUnloadChunk                (int a_ChunkX, int a_ChunkZ) = 0;
 	virtual void SendUpdateBlockEntity          (cBlockEntity & a_BlockEntity) = 0;
 	virtual void SendUpdateSign                 (int a_BlockX, int a_BlockY, int a_BlockZ, const AString & a_Line1, const AString & a_Line2, const AString & a_Line3, const AString & a_Line4) = 0;
@@ -166,6 +236,9 @@ protected:
 
 	/** Buffer for composing packet length (so that each cPacketizer instance doesn't allocate a new cPacketBuffer) */
 	cByteBuffer m_OutPacketLenBuffer;
+
+	/** Returns the protocol-specific packet ID given the protocol-agnostic packet enum (see PacketID.cpp for implementations) */
+	virtual UInt32 GetPacketId(eOutgoingPackets a_Packet) = 0;
 
 	/** A generic data-sending routine, all outgoing packet data needs to be routed through this so that descendants may override it. */
 	virtual void SendData(const char * a_Data, size_t a_Size) = 0;

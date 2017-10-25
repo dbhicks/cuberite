@@ -3,11 +3,11 @@ project (Cuberite)
 
 include_directories (SYSTEM "${CMAKE_CURRENT_SOURCE_DIR}/../lib/")
 include_directories (SYSTEM "${CMAKE_CURRENT_SOURCE_DIR}/../lib/jsoncpp/include")
-include_directories (SYSTEM "${CMAKE_CURRENT_SOURCE_DIR}/../lib/polarssl/include")
+include_directories (SYSTEM "${CMAKE_CURRENT_SOURCE_DIR}/../lib/mbedtls/include")
 include_directories (SYSTEM "${CMAKE_CURRENT_SOURCE_DIR}/../lib/libevent/include")
 
 set(FOLDERS
-	OSSupport HTTP Items Blocks Protocol Generating PolarSSL++ Bindings
+	OSSupport HTTP Items Blocks Protocol Generating mbedTLS++ Bindings
 	WorldStorage Mobs Entities Simulator Simulator/IncrementalRedstoneSimulator
 	BlockEntities UI Noise
 )
@@ -69,6 +69,7 @@ SET (SRCS
 	StringCompression.cpp
 	StringUtils.cpp
 	Tracer.cpp
+	UUID.cpp
 	VoronoiMap.cpp
 	WebAdmin.cpp
 	World.cpp
@@ -111,6 +112,7 @@ SET (HDRS
 	FastRandom.h
 	ForEachChunkProvider.h
 	FurnaceRecipe.h
+	FunctionRef.h
 	Globals.h
 	IniFile.h
 	Inventory.h
@@ -147,6 +149,7 @@ SET (HDRS
 	StringCompression.h
 	StringUtils.h
 	Tracer.h
+	UUID.h
 	Vector3.h
 	VoronoiMap.h
 	WebAdmin.h
@@ -162,20 +165,16 @@ include_directories (SYSTEM "${CMAKE_CURRENT_SOURCE_DIR}/../lib/TCLAP/include")
 configure_file("BuildInfo.h.cmake" "${CMAKE_CURRENT_SOURCE_DIR}/BuildInfo.h")
 
 if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
-	set_source_files_properties(BiomeDef.cpp PROPERTIES COMPILE_FLAGS "-Wno-error=switch-enum")
 	set_source_files_properties(BlockID.cpp PROPERTIES COMPILE_FLAGS "-Wno-error=global-constructors")
-	set_source_files_properties(BoundingBox.cpp PROPERTIES COMPILE_FLAGS "-Wno-error=global-constructors")
 	set_source_files_properties(ByteBuffer.cpp PROPERTIES COMPILE_FLAGS "-Wno-error=global-constructors")
 	set_source_files_properties(ClientHandle.cpp PROPERTIES COMPILE_FLAGS "-Wno-error=global-constructors ")
-	set_source_files_properties(CompositeChat.cpp PROPERTIES COMPILE_FLAGS "-Wno-error=global-constructors")
-	set_source_files_properties(MobSpawner.cpp PROPERTIES COMPILE_FLAGS "-Wno-error=switch-enum")
 	set_source_files_properties(Statistics.cpp PROPERTIES COMPILE_FLAGS "-Wno-error=global-constructors")
 endif()
 
 if (NOT MSVC)
 	# Bindings need to reference other folders, so they are done here instead
 	# lib dependencies are not included
-	include_directories ("${CMAKE_CURRENT_SOURCE_DIR}/../lib/polarssl/include")
+	include_directories ("${CMAKE_CURRENT_SOURCE_DIR}/../lib/mbedtls/include")
 
 	foreach(folder ${FOLDERS})
 		add_subdirectory(${folder})
@@ -347,7 +346,7 @@ if (NOT MSVC)
 		OSSupport HTTPServer Bindings Items Blocks Noise
 		Protocol Generating WorldStorage
 		Mobs Entities Simulator IncrementalRedstoneSimulator
-		BlockEntities UI PolarSSL++
+		BlockEntities UI mbedTLS++
 	)
 endif ()
 

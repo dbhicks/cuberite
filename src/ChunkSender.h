@@ -1,4 +1,4 @@
-﻿
+
 // ChunkSender.h
 
 // Interfaces to the cChunkSender class representing the thread that waits for chunks becoming ready (loaded / generated) and sends them to clients
@@ -26,7 +26,6 @@ Note that it may be called by world's BroadcastToChunk() if the client is still 
 #pragma once
 
 #include "OSSupport/IsThread.h"
-#include "ChunkDef.h"
 #include "ChunkDataCallback.h"
 
 #include <unordered_set>
@@ -52,7 +51,7 @@ class cChunkSender;
 
 class cChunkSender:
 	public cIsThread,
-	public cChunkDataSeparateCollector
+	public cChunkDataCopyCollector
 {
 	typedef cIsThread super;
 public:

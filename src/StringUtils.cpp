@@ -228,6 +228,42 @@ AStringVector StringSplitWithQuotes(const AString & str, const AString & delim)
 
 
 
+
+AString StringJoin(const AStringVector & a_Strings, const AString & a_Delimeter)
+{
+	if (a_Strings.empty())
+	{
+		return {};
+	}
+
+	// Do a dry run to gather the size
+	const auto DelimSize = a_Delimeter.size();
+	size_t ResultSize = a_Strings[0].size();
+	std::for_each(a_Strings.begin() + 1, a_Strings.end(),
+		[&](const AString & a_String)
+		{
+			ResultSize += DelimSize;
+			ResultSize += a_String.size();
+		}
+	);
+
+	// Now do the actual join
+	AString Result;
+	Result.reserve(ResultSize);
+	Result.append(a_Strings[0]);
+	std::for_each(a_Strings.begin() + 1, a_Strings.end(),
+		[&](const AString & a_String)
+		{
+			Result += a_Delimeter;
+			Result += a_String;
+		}
+	);
+	return Result;
+}
+
+
+
+
 AStringVector StringSplitAndTrim(const AString & str, const AString & delim)
 {
 	AStringVector results;
@@ -329,11 +365,9 @@ AString StrToUpper(const AString & s)
 int NoCaseCompare(const AString & s1, const AString & s2)
 {
 	#ifdef _MSC_VER
-		// MSVC has stricmp that compares case-insensitive:
 		return _stricmp(s1.c_str(), s2.c_str());
 	#else
-		// Do it the hard way - convert both strings to lowercase:
-		return StrToLower(s1).compare(StrToLower(s2));
+		return strcasecmp(s1.c_str(), s2.c_str());
 	#endif  // else _MSC_VER
 }
 

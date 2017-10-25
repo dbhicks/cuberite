@@ -1,7 +1,6 @@
 
 #include "Globals.h"
 #include "ItemHandler.h"
-#include "../Item.h"
 #include "../World.h"
 #include "../Entities/Player.h"
 #include "../FastRandom.h"
@@ -357,15 +356,12 @@ bool cItemHandler::OnPlayerPlace(
 	NIBBLETYPE ClickedBlockMeta;
 
 	a_World.GetBlockTypeMeta(a_BlockX, a_BlockY, a_BlockZ, ClickedBlock, ClickedBlockMeta);
+	cChunkInterface ChunkInterface(a_World.GetChunkMap());
 
 	// Check if the block ignores build collision (water, grass etc.):
-	if (
-		BlockHandler(ClickedBlock)->DoesIgnoreBuildCollision() ||
-		BlockHandler(ClickedBlock)->DoesIgnoreBuildCollision(&a_Player, ClickedBlockMeta)
-	)
+	if (BlockHandler(ClickedBlock)->DoesIgnoreBuildCollision(ChunkInterface, { a_BlockX, a_BlockY, a_BlockZ }, a_Player, ClickedBlockMeta))
 	{
-		cChunkInterface ChunkInterface(a_World.GetChunkMap());
-		BlockHandler(ClickedBlock)->OnDestroyedByPlayer(ChunkInterface, a_World, &a_Player, a_BlockX, a_BlockY, a_BlockZ);
+		BlockHandler(ClickedBlock)->OnDestroyedByPlayer(ChunkInterface, a_World, a_Player, a_BlockX, a_BlockY, a_BlockZ);
 	}
 	else
 	{
@@ -383,10 +379,7 @@ bool cItemHandler::OnPlayerPlace(
 
 		// Clicked on side of block, make sure that placement won't be cancelled if there is a slab able to be double slabbed.
 		// No need to do combinability (dblslab) checks, client will do that here.
-		if (
-			!BlockHandler(PlaceBlock)->DoesIgnoreBuildCollision() &&
-			!BlockHandler(PlaceBlock)->DoesIgnoreBuildCollision(&a_Player, PlaceMeta)
-			)
+		if (!BlockHandler(PlaceBlock)->DoesIgnoreBuildCollision(ChunkInterface, { a_BlockX, a_BlockY, a_BlockZ }, a_Player, PlaceMeta))
 		{
 			// Tried to place a block into another?
 			// Happens when you place a block aiming at side of block with a torch on it or stem beside it
@@ -401,9 +394,9 @@ bool cItemHandler::OnPlayerPlace(
 		// Handler refused the placement, send that information back to the client:
 		for (const auto & blk: blocks)
 		{
-			a_World.SendBlockTo(blk.GetX(), blk.GetY(), blk.GetZ(), &a_Player);
+			a_World.SendBlockTo(blk.GetX(), blk.GetY(), blk.GetZ(), a_Player);
 		}
-		a_World.SendBlockTo(a_BlockX, a_BlockY, a_BlockZ, &a_Player);
+		a_World.SendBlockTo(a_BlockX, a_BlockY, a_BlockZ, a_Player);
 		a_Player.GetInventory().SendEquippedSlot();
 		return false;
 	}
@@ -621,6 +614,7 @@ char cItemHandler::GetMaxStackSize(void)
 		case E_ITEM_IRON:                 return 64;
 		case E_ITEM_IRON_NUGGET:          return 64;
 		case E_ITEM_ITEM_FRAME:           return 64;
+		case E_ITEM_LEAD:                 return 64;
 		case E_ITEM_LEATHER:              return 64;
 		case E_ITEM_MAGMA_CREAM:          return 64;
 		case E_ITEM_MAP:                  return 64;
@@ -665,9 +659,9 @@ char cItemHandler::GetMaxStackSize(void)
 		case E_ITEM_SUGAR_CANE:           return 64;
 		case E_ITEM_TIPPED_ARROW:         return 64;
 		case E_ITEM_WHEAT:                return 64;
+		// By default items don't stack:
+		default:                          return 1;
 	}
-	// By default items don't stack:
-	return 1;
 }
 
 
@@ -821,7 +815,7 @@ bool cItemHandler::GetPlacementBlockTypeMeta(
 	cBlockHandler * BlockH = BlockHandler(static_cast<BLOCKTYPE>(m_ItemType));
 	cChunkInterface ChunkInterface(a_World->GetChunkMap());
 	return BlockH->GetPlacementBlockTypeMeta(
-		ChunkInterface, a_Player,
+		ChunkInterface, *a_Player,
 		a_BlockX, a_BlockY, a_BlockZ, a_BlockFace,
 		a_CursorX, a_CursorY, a_CursorZ,
 		a_BlockType, a_BlockMeta
@@ -832,41 +826,17 @@ bool cItemHandler::GetPlacementBlockTypeMeta(
 
 
 
-bool cItemHandler::GetEatEffect(cEntityEffect::eType & a_EffectType, int & a_EffectDurationTicks, short & a_EffectIntensity, float & a_Chance)
-{
-	return false;
-}
-
-
-
-
-
 bool cItemHandler::EatItem(cPlayer * a_Player, cItem * a_Item)
 {
-	UNUSED(a_Item);
 	if (!a_Player->IsGameModeCreative())
 	{
 		a_Player->GetInventory().RemoveOneEquippedItem();
 	}
 
-	FoodInfo Info = GetFoodInfo();
+	FoodInfo Info = GetFoodInfo(a_Item);
 	if ((Info.FoodLevel > 0) || (Info.Saturation > 0.f))
 	{
-		bool Success = a_Player->Feed(Info.FoodLevel, Info.Saturation);
-
-		// Give effects
-		cEntityEffect::eType EffectType;
-		int EffectDurationTicks;
-		short EffectIntensity;
-		float Chance;
-		if (Success && GetEatEffect(EffectType, EffectDurationTicks, EffectIntensity, Chance))
-		{
-			if (GetRandomProvider().RandBool(Chance))
-			{
-				a_Player->AddEntityEffect(EffectType, EffectDurationTicks, EffectIntensity, Chance);
-			}
-		}
-		return Success;
+		return a_Player->Feed(Info.FoodLevel, Info.Saturation);
 	}
 	return false;
 }
@@ -875,8 +845,9 @@ bool cItemHandler::EatItem(cPlayer * a_Player, cItem * a_Item)
 
 
 
-cItemHandler::FoodInfo cItemHandler::GetFoodInfo()
+cItemHandler::FoodInfo cItemHandler::GetFoodInfo(const cItem * a_Item)
 {
+	UNUSED(a_Item);
 	return FoodInfo(0, 0);
 }
 

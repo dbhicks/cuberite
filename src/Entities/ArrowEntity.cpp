@@ -76,7 +76,7 @@ bool cArrowEntity::CanPickup(const cPlayer & a_Player) const
 
 
 
-void cArrowEntity::OnHitSolidBlock(const Vector3d & a_HitPos, eBlockFace a_HitFace)
+void cArrowEntity::OnHitSolidBlock(Vector3d a_HitPos, eBlockFace a_HitFace)
 {
 	Vector3d Hit = a_HitPos;
 	Hit += GetSpeed().NormalizeCopy() / 100000;  // Make arrow sink into block a bit so it lodges (TODO: investigate how to stop them going so far so that they become black clientside)
@@ -88,12 +88,12 @@ void cArrowEntity::OnHitSolidBlock(const Vector3d & a_HitPos, eBlockFace a_HitFa
 	m_HitBlockPos = Vector3i(X, Y, Z);
 
 	// Broadcast arrow hit sound
-	m_World->BroadcastSoundEffect("entity.arrow.hit", static_cast<double>(X), static_cast<double>(Y), static_cast<double>(Z), 0.5f, static_cast<float>(0.75 + (static_cast<float>((GetUniqueID() * 23) % 32)) / 64));
+	m_World->BroadcastSoundEffect("entity.arrow.hit", BlockHit, 0.5f, static_cast<float>(0.75 + (static_cast<float>((GetUniqueID() * 23) % 32)) / 64));
 
 	if ((m_World->GetBlock(Hit) == E_BLOCK_TNT) && IsOnFire())
 	{
 		m_World->SetBlock(X, Y, Z, E_BLOCK_AIR, 0);
-		m_World->SpawnPrimedTNT(X, Y, Z);
+		m_World->SpawnPrimedTNT(Vector3d(BlockHit));
 	}
 
 }
@@ -102,7 +102,7 @@ void cArrowEntity::OnHitSolidBlock(const Vector3d & a_HitPos, eBlockFace a_HitFa
 
 
 
-void cArrowEntity::OnHitEntity(cEntity & a_EntityHit, const Vector3d & a_HitPos)
+void cArrowEntity::OnHitEntity(cEntity & a_EntityHit, Vector3d a_HitPos)
 {
 	super::OnHitEntity(a_EntityHit, a_HitPos);
 
@@ -119,23 +119,9 @@ void cArrowEntity::OnHitEntity(cEntity & a_EntityHit, const Vector3d & a_HitPos)
 		Damage += ExtraDamage;
 	}
 
-	// int KnockbackAmount = 1;
 	unsigned int PunchLevel = m_CreatorData.m_Enchantments.GetLevel(cEnchantments::enchPunch);
-	if (PunchLevel > 0)
-	{
-		Vector3d LookVector = GetLookVector();
-		Vector3f FinalSpeed = Vector3f(0, 0, 0);
-		switch (PunchLevel)
-		{
-			case 1: FinalSpeed = LookVector * Vector3d(5, 0.3, 5); break;
-			case 2: FinalSpeed = LookVector * Vector3d(8, 0.3, 8); break;
-			default: break;
-		}
-		a_EntityHit.SetSpeed(FinalSpeed);
-	}
-
-	// a_EntityHit.TakeDamage(dtRangedAttack, this, Damage, KnockbackAmount);  // TODO fix knockback.
-	a_EntityHit.TakeDamage(dtRangedAttack, GetCreatorUniqueID(), Damage, 0);  // Until knockback is fixed.
+	double KnockbackAmount = 11 + 10 * PunchLevel;
+	a_EntityHit.TakeDamage(dtRangedAttack, GetCreatorUniqueID(), Damage, KnockbackAmount);
 
 	if (IsOnFire() && !a_EntityHit.IsSubmerged() && !a_EntityHit.IsSwimming())
 	{
@@ -143,7 +129,7 @@ void cArrowEntity::OnHitEntity(cEntity & a_EntityHit, const Vector3d & a_HitPos)
 	}
 
 	// Broadcast successful hit sound
-	GetWorld()->BroadcastSoundEffect("entity.arrow.hit_player", GetPosX(), GetPosY(), GetPosZ(), 0.5, static_cast<float>(0.75 + (static_cast<float>((GetUniqueID() * 23) % 32)) / 64));
+	GetWorld()->BroadcastSoundEffect("entity.arrow.hit_player", GetPosition(), 0.5, static_cast<float>(0.75 + (static_cast<float>((GetUniqueID() * 23) % 32)) / 64));
 
 	Destroy();
 }
@@ -168,7 +154,7 @@ void cArrowEntity::CollectedBy(cPlayer & a_Dest)
 		}
 
 		GetWorld()->BroadcastCollectEntity(*this, a_Dest, 1);
-		GetWorld()->BroadcastSoundEffect("entity.item.pickup", GetPosX(), GetPosY(), GetPosZ(), 0.5, static_cast<float>(0.75 + (static_cast<float>((GetUniqueID() * 23) % 32)) / 64));
+		GetWorld()->BroadcastSoundEffect("entity.item.pickup", GetPosition(), 0.5, static_cast<float>(0.75 + (static_cast<float>((GetUniqueID() * 23) % 32)) / 64));
 		m_bIsCollected = true;
 	}
 }

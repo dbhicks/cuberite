@@ -8,6 +8,8 @@
 
 #include "../Statistics.h"
 
+#include "../UUID.h"
+
 
 
 
@@ -41,7 +43,7 @@ public:
 
 	cPlayer(cClientHandlePtr a_Client, const AString & a_PlayerName);
 
-	virtual bool Initialize(cWorld & a_World) override;
+	virtual bool Initialize(OwnedEntity a_Self, cWorld & a_World) override;
 
 	virtual ~cPlayer() override;
 
@@ -68,6 +70,7 @@ public:
 	/** Returns the currently equipped boots; empty item if none */
 	virtual cItem GetEquippedBoots(void) const override { return m_Inventory.GetEquippedBoots(); }
 
+	virtual void ApplyArmorDamage(int DamageBlocked) override;
 
 	// tolua_begin
 
@@ -96,12 +99,12 @@ public:
 	float GetXpPercentage(void);
 
 	/** Calculates the amount of XP needed for a given level
-	Ref: http://minecraft.gamepedia.com/XP
+	Ref: https://minecraft.gamepedia.com/XP
 	*/
 	static int XpForLevel(int a_Level);
 
 	/** Inverse of XpForLevel
-	Ref: http://minecraft.gamepedia.com/XP
+	Ref: https://minecraft.gamepedia.com/XP
 	values are as per this with pre-calculations
 	*/
 	static int CalcLevelFromXp(int a_CurrentXp);
@@ -191,6 +194,15 @@ public:
 
 	/** Returns true if the player is in Spectator mode, either explicitly, or by inheriting from current world */
 	bool IsGameModeSpectator(void) const;
+
+	/** Returns true if the player is fireproof
+	Stops players burning in creative or spectator modes.
+	*/
+	virtual bool IsFireproof() const override
+	{
+		return (m_IsFireproof || IsGameModeCreative() || IsGameModeSpectator());
+
+	}
 
 	/** Returns true if the player can be targeted by Mobs */
 	bool CanMobsTarget(void) const;
@@ -328,13 +340,13 @@ public:
 	/** Returns true if the player is currently in the process of eating the currently equipped item */
 	bool IsEating(void) const { return (m_EatingFinishTick >= 0); }
 
-	/** Returns true if the player is currently flying. */
+	/** Returns true if the player is currently flying */
 	bool IsFlying(void) const { return m_IsFlying; }
 
-	/** Returns if a player is sleeping in a bed */
+	/** Returns true if a player is sleeping in a bed */
 	bool IsInBed(void) const { return m_bIsInBed; }
 
-	/** returns true if the player has thrown out a floater. */
+	/** Returns true if the player has thrown out a floater */
 	bool IsFishing(void) const { return m_IsFishing; }
 
 	void SetIsFishing(bool a_IsFishing, UInt32 a_FloaterID = cEntity::INVALID_ID) { m_IsFishing = a_IsFishing; m_FloaterID = a_FloaterID; }
@@ -397,6 +409,10 @@ public:
 
 	const AString & GetLoadedWorldName() { return m_LoadedWorldName; }
 
+	/** Opens the inventory of any tame horse the player is riding.
+	If the player is not riding a horse or if the horse is untamed, does nothing. */
+	void OpenHorseInventory();
+
 	void UseEquippedItem(int a_Amount = 1);
 
 	void SendHealth(void);
@@ -404,7 +420,10 @@ public:
 	void SendExperience(void);
 
 	/** In UI windows, get the item that the player is dragging */
-	cItem & GetDraggingItem(void) {return m_DraggingItem; }
+	cItem & GetDraggingItem(void) {return m_DraggingItem; }  // tolua_export
+
+	/** In UI windows, set the item that the player is dragging */
+	void SetDraggingItem(const cItem & a_Item);  // tolua_export
 
 	// In UI windows, when inventory-painting:
 	/** Clears the list of slots that are being inventory-painted. To be used by cWindow only */
@@ -481,13 +500,16 @@ public:
 	/** Update movement-related statistics. */
 	void UpdateMovementStats(const Vector3d & a_DeltaPos, bool a_PreviousIsOnGround);
 
+	/** Whether placing the given blocks would intersect any entitiy */
+	bool DoesPlacingBlocksIntersectEntity(const sSetBlockVector & a_Blocks);
+
+	/** Returns the UUID that has been read from the client, or nil if not available. */
+	const cUUID & GetUUID(void) const { return m_UUID; }  // Exported in ManualBindings.cpp
+
 	// tolua_begin
 
 	/** Returns wheter the player can fly or not. */
 	virtual bool CanFly(void) const { return m_CanFly; }
-
-	/** Returns the UUID (short format) that has been read from the client, or empty string if not available. */
-	const AString & GetUUID(void) const { return m_UUID; }
 
 	/** (Re)loads the rank and permissions from the cRankManager.
 	Expects the m_UUID member to be valid.
@@ -687,9 +709,9 @@ protected:
 	*/
 	bool m_bIsTeleporting;
 
-	/** The short UUID (no dashes) of the player, as read from the ClientHandle.
-	If no ClientHandle is given, the UUID is initialized to empty. */
-	AString m_UUID;
+	/** The UUID of the player, as read from the ClientHandle.
+	If no ClientHandle is given, the UUID is nil. */
+	cUUID m_UUID;
 
 	AString m_CustomName;
 
@@ -710,9 +732,6 @@ protected:
 	/** Filters out damage for creative mode / friendly fire */
 	virtual bool DoTakeDamage(TakeDamageInfo & TDI) override;
 
-	/** Stops players from burning in creative mode */
-	virtual void TickBurning(cChunk & a_Chunk) override;
-
 	/** Called in each tick to handle food-related processing */
 	void HandleFood(void);
 
@@ -724,7 +743,7 @@ protected:
 
 	/** Returns the filename for the player data based on the UUID given.
 	This can be used both for online and offline UUIDs. */
-	AString GetUUIDFileName(const AString & a_UUID);
+	AString GetUUIDFileName(const cUUID & a_UUID);
 
 private:
 

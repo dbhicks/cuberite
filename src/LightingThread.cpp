@@ -6,7 +6,6 @@
 #include "Globals.h"
 #include "LightingThread.h"
 #include "ChunkMap.h"
-#include "ChunkStay.h"
 #include "World.h"
 
 
@@ -89,9 +88,9 @@ public:
 ////////////////////////////////////////////////////////////////////////////////
 // cLightingThread:
 
-cLightingThread::cLightingThread(void) :
+cLightingThread::cLightingThread(cWorld & a_World):
 	super("cLightingThread"),
-	m_World(nullptr),
+	m_World(a_World),
 	m_MaxHeight(0),
 	m_NumSeeds(0)
 {
@@ -104,18 +103,6 @@ cLightingThread::cLightingThread(void) :
 cLightingThread::~cLightingThread()
 {
 	Stop();
-}
-
-
-
-
-
-bool cLightingThread::Start(cWorld * a_World)
-{
-	ASSERT(m_World == nullptr);  // Not started yet
-	m_World = a_World;
-
-	return super::Start();
 }
 
 
@@ -151,8 +138,6 @@ void cLightingThread::Stop(void)
 
 void cLightingThread::QueueChunk(int a_ChunkX, int a_ChunkZ, std::unique_ptr<cChunkCoordCallback> a_CallbackAfter)
 {
-	ASSERT(m_World != nullptr);  // Did you call Start() properly?
-
 	cChunkStay * ChunkStay = new cLightingChunkStay(*this, a_ChunkX, a_ChunkZ, std::move(a_CallbackAfter));
 	{
 		// The ChunkStay will enqueue itself using the QueueChunkStay() once it is fully loaded
@@ -160,7 +145,7 @@ void cLightingThread::QueueChunk(int a_ChunkX, int a_ChunkZ, std::unique_ptr<cCh
 		cCSLock Lock(m_CS);
 		m_PendingQueue.push_back(ChunkStay);
 	}
-	ChunkStay->Enable(*m_World->GetChunkMap());
+	ChunkStay->Enable(*m_World.GetChunkMap());
 }
 
 
@@ -239,7 +224,7 @@ void cLightingThread::Execute(void)
 void cLightingThread::LightChunk(cLightingChunkStay & a_Item)
 {
 	// If the chunk is already lit, skip it (report as success):
-	if (m_World->IsChunkLighted(a_Item.m_ChunkX, a_Item.m_ChunkZ))
+	if (m_World.IsChunkLighted(a_Item.m_ChunkX, a_Item.m_ChunkZ))
 	{
 		if (a_Item.m_CallbackAfter != nullptr)
 		{
@@ -320,7 +305,7 @@ void cLightingThread::LightChunk(cLightingChunkStay & a_Item)
 	CompressLight(m_BlockLight, BlockLight);
 	CompressLight(m_SkyLight, SkyLight);
 
-	m_World->ChunkLighted(a_Item.m_ChunkX, a_Item.m_ChunkZ, BlockLight, SkyLight);
+	m_World.ChunkLighted(a_Item.m_ChunkX, a_Item.m_ChunkZ, BlockLight, SkyLight);
 
 	if (a_Item.m_CallbackAfter != nullptr)
 	{
@@ -342,7 +327,7 @@ void cLightingThread::ReadChunks(int a_ChunkX, int a_ChunkZ)
 		for (int x = 0; x < 3; x++)
 		{
 			Reader.m_ReadingChunkX = x;
-			VERIFY(m_World->GetChunkData(a_ChunkX + x - 1, a_ChunkZ + z - 1, Reader));
+			VERIFY(m_World.GetChunkData(a_ChunkX + x - 1, a_ChunkZ + z - 1, Reader));
 		}  // for z
 	}  // for x
 
@@ -379,7 +364,8 @@ void cLightingThread::PrepareSkyLight(void)
 			ASSERT(Current < cChunkDef::Height);
 			while (
 				(Current >= 0) &&
-				cBlockInfo::IsTransparent(m_BlockTypes[idx + Current * BlocksPerYLayer])
+				cBlockInfo::IsTransparent(m_BlockTypes[idx + Current * BlocksPerYLayer]) &&
+				!cBlockInfo::IsSkylightDispersant(m_BlockTypes[idx + Current * BlocksPerYLayer])
 			)
 			{
 				Current -= 1;  // Sunlight goes down unchanged through this block

@@ -1,24 +1,22 @@
 
 #include "Globals.h"  // NOTE: MSVC stupidness requires this to be the same across all modules
 
-#include <cmath>
 #include <unordered_map>
 
 #include "Player.h"
 #include "Mobs/Wolf.h"
+#include "Mobs/Horse.h"
 #include "../BoundingBox.h"
 #include "../ChatColor.h"
 #include "../Server.h"
 #include "../UI/InventoryWindow.h"
 #include "../UI/WindowOwner.h"
-#include "../World.h"
 #include "../Bindings/PluginManager.h"
 #include "../BlockEntities/BlockEntity.h"
 #include "../BlockEntities/EnderChestEntity.h"
 #include "../Root.h"
 #include "../Chunk.h"
 #include "../Items/ItemHandler.h"
-#include "../Vector3.h"
 #include "../FastRandom.h"
 #include "../ClientHandle.h"
 
@@ -87,7 +85,7 @@ cPlayer::cPlayer(cClientHandlePtr a_Client, const AString & a_PlayerName) :
 	m_bIsInBed(false),
 	m_TicksUntilNextSave(PLAYER_INVENTORY_SAVE_INTERVAL),
 	m_bIsTeleporting(false),
-	m_UUID((a_Client != nullptr) ? a_Client->GetUUID() : ""),
+	m_UUID((a_Client != nullptr) ? a_Client->GetUUID() : cUUID{}),
 	m_CustomName(""),
 	m_SkinParts(0),
 	m_MainHand(mhRight)
@@ -146,20 +144,18 @@ cPlayer::cPlayer(cClientHandlePtr a_Client, const AString & a_PlayerName) :
 		m_IsFlying = true;
 		m_bVisible = false;
 	}
-
-	cRoot::Get()->GetServer()->PlayerCreated(this);
 }
 
 
 
 
 
-bool cPlayer::Initialize(cWorld & a_World)
+bool cPlayer::Initialize(OwnedEntity a_Self, cWorld & a_World)
 {
 	UNUSED(a_World);
 	ASSERT(GetWorld() != nullptr);
 	ASSERT(GetParentChunk() == nullptr);
-	GetWorld()->AddPlayer(this);
+	GetWorld()->AddPlayer(std::unique_ptr<cPlayer>(static_cast<cPlayer *>(a_Self.release())));
 
 	cPluginManager::Get()->CallHookSpawnedEntity(*GetWorld(), *this);
 
@@ -182,9 +178,6 @@ cPlayer::~cPlayer(void)
 	}
 
 	LOGD("Deleting cPlayer \"%s\" at %p, ID %d", GetName().c_str(), static_cast<void *>(this), GetUniqueID());
-
-	// Notify the server that the player is being destroyed
-	cRoot::Get()->GetServer()->PlayerDestroying(this);
 
 	SaveToDisk();
 
@@ -940,6 +933,22 @@ void cPlayer::SetFlying(bool a_IsFlying)
 
 
 
+void cPlayer::ApplyArmorDamage(int DamageBlocked)
+{
+	short ArmorDamage = static_cast<short>(DamageBlocked / 4);
+	if (ArmorDamage == 0)
+	{
+		ArmorDamage = 1;
+	}
+	m_Inventory.DamageItem(cInventory::invArmorOffset + 0, ArmorDamage);
+	m_Inventory.DamageItem(cInventory::invArmorOffset + 1, ArmorDamage);
+	m_Inventory.DamageItem(cInventory::invArmorOffset + 2, ArmorDamage);
+	m_Inventory.DamageItem(cInventory::invArmorOffset + 3, ArmorDamage);
+}
+
+
+
+
 
 bool cPlayer::DoTakeDamage(TakeDamageInfo & a_TDI)
 {
@@ -976,6 +985,7 @@ bool cPlayer::DoTakeDamage(TakeDamageInfo & a_TDI)
 		AddFoodExhaustion(0.3f);
 		SendHealth();
 
+		// Tell the wolves
 		if (a_TDI.Attacker != nullptr)
 		{
 			if (a_TDI.Attacker->IsPawn())
@@ -996,36 +1006,21 @@ bool cPlayer::DoTakeDamage(TakeDamageInfo & a_TDI)
 void cPlayer::NotifyNearbyWolves(cPawn * a_Opponent, bool a_IsPlayerInvolved)
 {
 	ASSERT(a_Opponent != nullptr);
-	class LookForWolves : public cEntityCallback
-	{
-	public:
-		cPlayer * m_Player;
-		cPawn * m_Attacker;
-		bool m_IsPlayerInvolved;
 
-		LookForWolves(cPlayer * a_Me, cPawn * a_MyAttacker, bool a_PlayerInvolved) :
-			m_Player(a_Me),
-			m_Attacker(a_MyAttacker),
-			m_IsPlayerInvolved(a_PlayerInvolved)
+	m_World->ForEachEntityInBox(cBoundingBox(GetPosition(), 16), [&] (cEntity & a_Entity)
 		{
-		}
-
-		virtual bool Item(cEntity * a_Entity) override
-		{
-			if (a_Entity->IsMob())
+			if (a_Entity.IsMob())
 			{
-				cMonster * Mob = static_cast<cMonster*>(a_Entity);
-				if (Mob->GetMobType() == mtWolf)
+				auto & Mob = static_cast<cMonster&>(a_Entity);
+				if (Mob.GetMobType() == mtWolf)
 				{
-					cWolf * Wolf = static_cast<cWolf*>(Mob);
-					Wolf->ReceiveNearbyFightInfo(m_Player->GetUUID(), m_Attacker, m_IsPlayerInvolved);
+					auto & Wolf = static_cast<cWolf&>(Mob);
+					Wolf.ReceiveNearbyFightInfo(GetUUID(), a_Opponent, a_IsPlayerInvolved);
 				}
 			}
 			return false;
 		}
-	} Callback(this, a_Opponent, a_IsPlayerInvolved);
-
-	m_World->ForEachEntityInBox(cBoundingBox(GetPosition(), 16), Callback);
+	);
 }
 
 
@@ -1187,7 +1182,7 @@ void cPlayer::Respawn(void)
 
 	if (GetWorld() != m_SpawnWorld)
 	{
-		MoveToWorld(m_SpawnWorld, false, GetLastBedPos());
+		ScheduleMoveToWorld(m_SpawnWorld, GetLastBedPos(), false);
 	}
 	else
 	{
@@ -1312,10 +1307,16 @@ cTeam * cPlayer::UpdateTeam(void)
 
 void cPlayer::OpenWindow(cWindow & a_Window)
 {
+	if (cRoot::Get()->GetPluginManager()->CallHookPlayerOpeningWindow(*this, a_Window))
+	{
+		return;
+	}
+
 	if (&a_Window != m_CurrentWindow)
 	{
 		CloseWindow(false);
 	}
+
 	a_Window.OpenedByPlayer(*this);
 	m_CurrentWindow = &a_Window;
 	a_Window.SendWholeWindow(*GetClientHandle());
@@ -1868,6 +1869,19 @@ AString cPlayer::GetPlayerListName(void) const
 
 
 
+void cPlayer::SetDraggingItem(const cItem & a_Item)
+{
+	if (GetWindow() != nullptr)
+	{
+		m_DraggingItem = a_Item;
+		GetClientHandle()->SendInventorySlot(-1, -1, m_DraggingItem);
+	}
+}
+
+
+
+
+
 void cPlayer::TossEquippedItem(char a_Amount)
 {
 	cItems Drops;
@@ -1981,7 +1995,9 @@ bool cPlayer::DoMoveToWorld(cWorld * a_World, bool a_ShouldSendRespawn, Vector3d
 		GetWorld()->BroadcastDestroyEntity(*this);
 
 		// Remove player from world
-		GetWorld()->RemovePlayer(this, false);
+		// Make sure that RemovePlayer didn't return a valid smart pointer, due to the second parameter being false
+		// We remain valid and not destructed after this call
+		VERIFY(!GetWorld()->RemovePlayer(*this, false));
 
 		// Set position to the new position
 		SetPosition(a_NewPosition);
@@ -2023,8 +2039,10 @@ bool cPlayer::DoMoveToWorld(cWorld * a_World, bool a_ShouldSendRespawn, Vector3d
 			a_OldWorld.GetName().c_str(), a_World->GetName().c_str(),
 			ParentChunk->GetPosX(), ParentChunk->GetPosZ()
 		);
-		ParentChunk->RemoveEntity(this);
-		a_World->AddPlayer(this, &a_OldWorld);  // New world will take over and announce client at its next tick
+
+		// New world will take over and announce client at its next tick
+		auto PlayerPtr = static_cast<cPlayer *>(ParentChunk->RemoveEntity(*this).release());
+		a_World->AddPlayer(std::unique_ptr<cPlayer>(PlayerPtr), &a_OldWorld);
 	});
 
 	return true;
@@ -2045,7 +2063,7 @@ bool cPlayer::LoadFromDisk(cWorldPtr & a_World)
 	}
 
 	// Load from the offline UUID file, if allowed:
-	AString OfflineUUID = cClientHandle::GenerateOfflineUUID(GetName());
+	cUUID OfflineUUID = cClientHandle::GenerateOfflineUUID(GetName());
 	const char * OfflineUsage = " (unused)";
 	if (cRoot::Get()->GetServer()->ShouldLoadOfflinePlayerData())
 	{
@@ -2073,7 +2091,7 @@ bool cPlayer::LoadFromDisk(cWorldPtr & a_World)
 
 	// None of the files loaded successfully
 	LOG("Player data file not found for %s (%s, offline %s%s), will be reset to defaults.",
-		GetName().c_str(), m_UUID.c_str(), OfflineUUID.c_str(), OfflineUsage
+		GetName().c_str(), m_UUID.ToShortString().c_str(), OfflineUUID.ToShortString().c_str(), OfflineUsage
 	);
 
 	if (a_World == nullptr)
@@ -2171,7 +2189,7 @@ bool cPlayer::LoadFromFile(const AString & a_FileName, cWorldPtr & a_World)
 
 	// Load the player stats.
 	// We use the default world name (like bukkit) because stats are shared between dimensions / worlds.
-	cStatSerializer StatSerializer(cRoot::Get()->GetDefaultWorld()->GetName(), GetName(), &m_Stats);
+	cStatSerializer StatSerializer(cRoot::Get()->GetDefaultWorld()->GetDataPath(), GetName(), GetUUID().ToLongString(), &m_Stats);
 	StatSerializer.Load();
 
 	LOGD("Player %s was read from file \"%s\", spawning at {%.2f, %.2f, %.2f} in world \"%s\"",
@@ -2185,10 +2203,39 @@ bool cPlayer::LoadFromFile(const AString & a_FileName, cWorldPtr & a_World)
 
 
 
+void cPlayer::OpenHorseInventory()
+{
+	if (
+		(m_AttachedTo == nullptr) ||
+		!m_AttachedTo->IsMob()
+	)
+	{
+		return;
+	}
+
+	auto & Mob = static_cast<cMonster &>(*m_AttachedTo);
+
+	if (Mob.GetMobType() != mtHorse)
+	{
+		return;
+	}
+
+	auto & Horse = static_cast<cHorse &>(Mob);
+	// The client sends requests for untame horses as well but shouldn't actually open
+	if (Horse.IsTame())
+	{
+		Horse.PlayerOpenWindow(*this);
+	}
+}
+
+
+
+
+
 bool cPlayer::SaveToDisk()
 {
 	cFile::CreateFolder(FILE_IO_PREFIX + AString("players/"));  // Create the "players" folder, if it doesn't exist yet (#1268)
-	cFile::CreateFolder(FILE_IO_PREFIX + AString("players/") + m_UUID.substr(0, 2));
+	cFile::CreateFolder(FILE_IO_PREFIX + AString("players/") + m_UUID.ToShortString().substr(0, 2));
 
 	// create the JSON data
 	Json::Value JSON_PlayerPosition;
@@ -2269,7 +2316,7 @@ bool cPlayer::SaveToDisk()
 
 	// Save the player stats.
 	// We use the default world name (like bukkit) because stats are shared between dimensions / worlds.
-	cStatSerializer StatSerializer(cRoot::Get()->GetDefaultWorld()->GetName(), GetName(), &m_Stats);
+	cStatSerializer StatSerializer(cRoot::Get()->GetDefaultWorld()->GetDataPath(), GetName(), GetUUID().ToLongString(), &m_Stats);
 	if (!StatSerializer.Save())
 	{
 		LOGWARNING("Could not save stats for player %s", GetName().c_str());
@@ -2313,24 +2360,7 @@ void cPlayer::UseEquippedItem(int a_Amount)
 
 	if (GetInventory().DamageEquippedItem(static_cast<Int16>(a_Amount)))
 	{
-		m_World->BroadcastSoundEffect("entity.item.break", GetPosX(), GetPosY(), GetPosZ(), 0.5f, static_cast<float>(0.75 + (static_cast<float>((GetUniqueID() * 23) % 32)) / 64));
-	}
-}
-
-
-
-
-void cPlayer::TickBurning(cChunk & a_Chunk)
-{
-	// Don't burn in creative or spectator and stop burning in creative if necessary
-	if (!IsGameModeCreative() && !IsGameModeSpectator())
-	{
-		super::TickBurning(a_Chunk);
-	}
-	else if (IsOnFire())
-	{
-		m_TicksLeftBurning = 0;
-		OnFinishedBurning();
+		m_World->BroadcastSoundEffect("entity.item.break", GetPosition(), 0.5f, static_cast<float>(0.75 + (static_cast<float>((GetUniqueID() * 23) % 32)) / 64));
 	}
 }
 
@@ -2340,7 +2370,7 @@ void cPlayer::TickBurning(cChunk & a_Chunk)
 
 void cPlayer::HandleFood(void)
 {
-	// Ref.: http://minecraft.gamepedia.com/Hunger
+	// Ref.: https://minecraft.gamepedia.com/Hunger
 
 	if (IsGameModeCreative() || IsGameModeSpectator())
 	{
@@ -2400,17 +2430,12 @@ void cPlayer::HandleFloater()
 	{
 		return;
 	}
-	class cFloaterCallback :
-		public cEntityCallback
-	{
-	public:
-		virtual bool Item(cEntity * a_Entity) override
+	m_World->DoWithEntityByID(m_FloaterID, [](cEntity & a_Entity)
 		{
-			a_Entity->Destroy(true);
+			a_Entity.Destroy(true);
 			return true;
 		}
-	} Callback;
-	m_World->DoWithEntityByID(m_FloaterID, Callback);
+	);
 	SetIsFishing(false);
 }
 
@@ -2616,8 +2641,84 @@ void cPlayer::SendBlocksAround(int a_BlockX, int a_BlockY, int a_BlockZ, int a_R
 
 
 
+bool cPlayer::DoesPlacingBlocksIntersectEntity(const sSetBlockVector & a_Blocks)
+{
+	// Compute the bounding box for each block to be placed
+	std::vector<cBoundingBox> PlacementBoxes;
+	cBoundingBox PlacingBounds(0, 0, 0, 0, 0, 0);
+	bool HasInitializedBounds = false;
+	for (auto blk: a_Blocks)
+	{
+		cBlockHandler * BlockHandler = cBlockInfo::GetHandler(blk.m_BlockType);
+		int x = blk.GetX();
+		int y = blk.GetY();
+		int z = blk.GetZ();
+		cBoundingBox BlockBox = BlockHandler->GetPlacementCollisionBox(
+			m_World->GetBlock(x - 1, y, z),
+			m_World->GetBlock(x + 1, y, z),
+			(y == 0) ? E_BLOCK_AIR : m_World->GetBlock(x, y - 1, z),
+			(y == cChunkDef::Height - 1) ? E_BLOCK_AIR : m_World->GetBlock(x, y + 1, z),
+			m_World->GetBlock(x, y, z - 1),
+			m_World->GetBlock(x, y, z + 1)
+		);
+		BlockBox.Move(x, y, z);
+
+		PlacementBoxes.push_back(BlockBox);
+
+		if (HasInitializedBounds)
+		{
+			PlacingBounds = PlacingBounds.Union(BlockBox);
+		}
+		else
+		{
+			PlacingBounds = BlockBox;
+			HasInitializedBounds = true;
+		}
+	}
+
+	cWorld * World = GetWorld();
+
+	// Check to see if any entity intersects any block being placed
+	return !World->ForEachEntityInBox(PlacingBounds, [&](cEntity & a_Entity)
+		{
+			// The distance inside the block the entity can still be.
+			const double EPSILON = 0.0005;
+
+			if (!a_Entity.DoesPreventBlockPlacement())
+			{
+				return false;
+			}
+			cBoundingBox EntBox(a_Entity.GetPosition(), a_Entity.GetWidth() / 2, a_Entity.GetHeight());
+			for (auto BlockBox : PlacementBoxes)
+			{
+				// Put in a little bit of wiggle room
+				BlockBox.Expand(-EPSILON, -EPSILON, -EPSILON);
+				if (EntBox.DoesIntersect(BlockBox))
+				{
+					return true;
+				}
+			}
+			return false;
+		}
+	);
+}
+
+
+
+
+
 bool cPlayer::PlaceBlocks(const sSetBlockVector & a_Blocks)
 {
+	if (DoesPlacingBlocksIntersectEntity(a_Blocks))
+	{
+		// Abort - re-send all the current blocks in the a_Blocks' coords to the client:
+		for (auto blk2: a_Blocks)
+		{
+			m_World->SendBlockTo(blk2.GetX(), blk2.GetY(), blk2.GetZ(), *this);
+		}
+		return false;
+	}
+
 	// Call the "placing" hooks; if any fail, abort:
 	cPluginManager * pm = cPluginManager::Get();
 	for (auto blk: a_Blocks)
@@ -2627,7 +2728,7 @@ bool cPlayer::PlaceBlocks(const sSetBlockVector & a_Blocks)
 			// Abort - re-send all the current blocks in the a_Blocks' coords to the client:
 			for (auto blk2: a_Blocks)
 			{
-				m_World->SendBlockTo(blk2.GetX(), blk2.GetY(), blk2.GetZ(), this);
+				m_World->SendBlockTo(blk2.GetX(), blk2.GetY(), blk2.GetZ(), *this);
 			}
 			return false;
 		}
@@ -2641,7 +2742,7 @@ bool cPlayer::PlaceBlocks(const sSetBlockVector & a_Blocks)
 	for (auto blk: a_Blocks)
 	{
 		cBlockHandler * newBlock = BlockHandler(blk.m_BlockType);
-		newBlock->OnPlacedByPlayer(ChunkInterface, *m_World, this, blk);
+		newBlock->OnPlacedByPlayer(ChunkInterface, *m_World, *this, blk);
 	}
 
 	// Call the "placed" hooks:
@@ -2752,10 +2853,9 @@ void cPlayer::RemoveClientHandle(void)
 
 
 
-AString cPlayer::GetUUIDFileName(const AString & a_UUID)
+AString cPlayer::GetUUIDFileName(const cUUID & a_UUID)
 {
-	AString UUID = cMojangAPI::MakeUUIDDashed(a_UUID);
-	ASSERT(UUID.length() == 36);
+	AString UUID = a_UUID.ToLongString();
 
 	AString res("players/");
 	res.append(UUID, 0, 2);
@@ -2846,15 +2946,17 @@ float cPlayer::GetDigSpeed(BLOCKTYPE a_Block)
 		}
 	}
 
-	if (HasEntityEffect(cEntityEffect::effHaste))
+	auto Haste = GetEntityEffect(cEntityEffect::effHaste);
+	if (Haste != nullptr)
 	{
-		int intensity = GetEntityEffect(cEntityEffect::effHaste)->GetIntensity() + 1;
+		int intensity = Haste->GetIntensity() + 1;
 		f *= 1.0f + (intensity * 0.2f);
 	}
 
-	if (HasEntityEffect(cEntityEffect::effMiningFatigue))
+	auto MiningFatigue = GetEntityEffect(cEntityEffect::effMiningFatigue);
+	if (MiningFatigue != nullptr)
 	{
-		int intensity = GetEntityEffect(cEntityEffect::effMiningFatigue)->GetIntensity();
+		int intensity = MiningFatigue->GetIntensity();
 		switch (intensity)
 		{
 			case 0:  f *= 0.3f;     break;
@@ -2890,4 +2992,3 @@ float cPlayer::GetPlayerRelativeBlockHardness(BLOCKTYPE a_Block)
 	// LOGD("blockHardness: %f, digSpeed: %f, canHarvestBlockDivisor: %f\n", blockHardness, digSpeed, canHarvestBlockDivisor);
 	return (blockHardness < 0) ? 0 : ((digSpeed / blockHardness) / canHarvestBlockDivisor);
 }
-

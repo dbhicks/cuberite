@@ -789,6 +789,24 @@ bool cPluginManager::CallHookLogin(cClientHandle & a_Client, UInt32 a_ProtocolVe
 
 
 
+bool cPluginManager::CallHookLoginForge(cClientHandle & a_Client, AStringMap & a_Mods)
+{
+	FIND_HOOK(HOOK_LOGIN_FORGE)
+	VERIFY_HOOK;
+
+	for (PluginList::iterator itr = Plugins->second.begin(); itr != Plugins->second.end(); ++itr)
+	{
+		if ((*itr)->OnLoginForge(a_Client, a_Mods))
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+
+
+
 
 bool cPluginManager::CallHookPlayerAnimation(cPlayer & a_Player, int a_Animation)
 {
@@ -988,6 +1006,25 @@ bool cPluginManager::CallHookPlayerMoving(cPlayer & a_Player, const Vector3d & a
 	for (PluginList::iterator itr = Plugins->second.begin(); itr != Plugins->second.end(); ++itr)
 	{
 		if ((*itr)->OnPlayerMoving(a_Player, a_OldPosition, a_NewPosition))
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+
+
+
+
+bool cPluginManager::CallHookPlayerOpeningWindow(cPlayer & a_Player, cWindow & a_Window)
+{
+	FIND_HOOK(HOOK_PLAYER_OPENING_WINDOW);
+	VERIFY_HOOK;
+
+	for (PluginList::iterator itr = Plugins->second.begin(); itr != Plugins->second.end(); ++itr)
+	{
+		if ((*itr)->OnPlayerOpeningWindow(a_Player, a_Window))
 		{
 			return true;
 		}
@@ -1956,14 +1993,14 @@ bool cPluginManager::IsValidHookType(int a_HookType)
 
 
 
-bool cPluginManager::DoWithPlugin(const AString & a_PluginName, cPluginCallback & a_Callback)
+bool cPluginManager::DoWithPlugin(const AString & a_PluginName, cPluginCallback a_Callback)
 {
 	// TODO: Implement locking for plugins
 	for (auto & plugin: m_Plugins)
 	{
 		if (plugin->GetName() == a_PluginName)
 		{
-			return a_Callback.Item(plugin.get());
+			return a_Callback(*plugin);
 		}
 	}
 	return false;
@@ -1973,12 +2010,12 @@ bool cPluginManager::DoWithPlugin(const AString & a_PluginName, cPluginCallback 
 
 
 
-bool cPluginManager::ForEachPlugin(cPluginCallback & a_Callback)
+bool cPluginManager::ForEachPlugin(cPluginCallback a_Callback)
 {
 	// TODO: Implement locking for plugins
 	for (auto & plugin: m_Plugins)
 	{
-		if (a_Callback.Item(plugin.get()))
+		if (a_Callback(*plugin))
 		{
 			return false;
 		}

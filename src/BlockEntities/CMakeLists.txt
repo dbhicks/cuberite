@@ -4,6 +4,7 @@ include_directories ("${PROJECT_SOURCE_DIR}/../")
 
 SET (SRCS
 	BeaconEntity.cpp
+	BedEntity.cpp
 	BlockEntity.cpp
 	BlockEntityWithItems.cpp
 	BrewingstandEntity.cpp
@@ -25,6 +26,7 @@ SET (SRCS
 
 SET (HDRS
 	BeaconEntity.h
+	BedEntity.h
 	BlockEntity.h
 	BlockEntityWithItems.h
 	BrewingstandEntity.h
@@ -43,10 +45,6 @@ SET (HDRS
 	NoteEntity.h
 	SignEntity.h
 )
-
-if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
-	set_source_files_properties(BeaconEntity.cpp PROPERTIES COMPILE_FLAGS "-Wno-error=switch-enum")
-endif()
 
 if(NOT MSVC)
 	add_library(BlockEntities ${SRCS} ${HDRS})

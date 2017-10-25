@@ -16,6 +16,7 @@ SET (SRCS
 	LuaUDPEndpoint.cpp
 	LuaWindow.cpp
 	ManualBindings.cpp
+	ManualBindings_BlockArea.cpp
 	ManualBindings_Network.cpp
 	ManualBindings_RankManager.cpp
 	ManualBindings_World.cpp
@@ -65,6 +66,7 @@ set(BINDING_DEPENDENCIES
 	../BiomeDef.h
 	../BlockArea.h
 	../BlockEntities/BeaconEntity.h
+	../BlockEntities/BedEntity.h
 	../BlockEntities/BlockEntity.h
 	../BlockEntities/BlockEntityWithItems.h
 	../BlockEntities/BrewingstandEntity.h
@@ -87,10 +89,12 @@ set(BINDING_DEPENDENCIES
 	../ChatColor.h
 	../ChunkDef.h
 	../ClientHandle.h
+	../Color.h
 	../CompositeChat.h
 	../CraftingRecipes.h
 	../Cuboid.h
 	../Defines.h
+	../EffectID.h
 	../Enchantments.h
 	../Entities/Boat.h
 	../Entities/ArrowEntity.h
@@ -105,6 +109,7 @@ set(BINDING_DEPENDENCIES
 	../Entities/GhastFireballEntity.h
 	../Entities/HangingEntity.h
 	../Entities/ItemFrame.h
+	../Entities/LeashKnot.h
 	../Entities/Pawn.h
 	../Entities/Player.h
 	../Entities/Painting.h
@@ -134,6 +139,7 @@ set(BINDING_DEPENDENCIES
 	../StringUtils.h
 	../Tracer.h
 	../UI/Window.h
+	../UUID.h
 	../Vector3.h
 	../WebAdmin.h
 	../World.h
@@ -163,7 +169,6 @@ set_source_files_properties(${CMAKE_SOURCE_DIR}/src/Bindings/Bindings.cpp PROPER
 
 if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
 	set_source_files_properties(Bindings.cpp PROPERTIES COMPILE_FLAGS ${COMPILE_FLAGS} "-Wno-old-style-cast -Wno-missing-prototypes")
-	set_source_files_properties(LuaWindow.cpp PROPERTIES COMPILE_FLAGS "-Wno-error=switch-enum")
 endif()
 
 if(NOT MSVC)

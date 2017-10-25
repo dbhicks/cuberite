@@ -20,6 +20,7 @@ extern "C"
 #include "../Entities/Entity.h"
 #include "../BlockEntities/BlockEntity.h"
 #include "../DeadlockDetect.h"
+#include "../UUID.h"
 
 
 
@@ -378,7 +379,7 @@ cLuaState::cStackTable::cStackTable(cLuaState & a_LuaState, int a_StackPos):
 
 
 
-void cLuaState::cStackTable::ForEachArrayElement(std::function<bool(cLuaState & a_LuaState, int a_Index)> a_ElementCallback) const
+void cLuaState::cStackTable::ForEachArrayElement(cFunctionRef<bool(cLuaState & a_LuaState, int a_Index)> a_ElementCallback) const
 {
 	auto numElements = luaL_getn(m_LuaState, m_StackPos);
 	#ifdef _DEBUG
@@ -403,7 +404,7 @@ void cLuaState::cStackTable::ForEachArrayElement(std::function<bool(cLuaState & 
 
 
 
-void cLuaState::cStackTable::ForEachElement(std::function<bool(cLuaState & a_LuaState)> a_ElementCallback) const
+void cLuaState::cStackTable::ForEachElement(cFunctionRef<bool(cLuaState & a_LuaState)> a_ElementCallback) const
 {
 	#ifdef _DEBUG
 		auto stackTop = lua_gettop(m_LuaState);
@@ -875,6 +876,17 @@ void cLuaState::Push(const char * a_Value)
 
 
 
+void cLuaState::Push(const cItem & a_Item)
+{
+	ASSERT(IsValid());
+	auto c = new cItem(a_Item);
+	tolua_pushusertype_and_takeownership(m_LuaState, c, "cItem");
+}
+
+
+
+
+
 void cLuaState::Push(const cNil & a_Nil)
 {
 	ASSERT(IsValid());
@@ -982,6 +994,7 @@ void cLuaState::Push(cEntity * a_Entity)
 			case cEntity::etExpOrb:
 			case cEntity::etItemFrame:
 			case cEntity::etPainting:
+			case cEntity::etLeashKnot:
 			{
 				// Push the generic entity class type:
 				tolua_pushusertype(m_LuaState, a_Entity, "cEntity");
@@ -1124,6 +1137,37 @@ bool cLuaState::GetStackValue(int a_StackPos, AStringMap & a_Value)
 			if (a_LuaState.GetStackValues(-2, key, val))
 			{
 				a_Value[key] = val;
+			}
+			else
+			{
+				isValid = false;
+				return true;
+			}
+			return false;
+		}
+	);
+	return isValid;
+}
+
+
+
+
+
+bool cLuaState::GetStackValue(int a_StackPos, AStringVector & a_Value)
+{
+	// Retrieve all values in an array of string table:
+	if (!lua_istable(m_LuaState, a_StackPos))
+	{
+		return false;
+	}
+	cStackTable tbl(*this, a_StackPos);
+	bool isValid = true;
+	tbl.ForEachArrayElement([&](cLuaState & a_LuaState, int a_Index)
+		{
+			AString tempStr;
+			if (a_LuaState.GetStackValue(-1, tempStr))
+			{
+				a_Value.push_back(std::move(tempStr));
 			}
 			else
 			{
@@ -1361,6 +1405,40 @@ bool cLuaState::GetStackValue(int a_StackPos, float & a_ReturnedVal)
 		return true;
 	}
 	return false;
+}
+
+
+
+
+
+bool cLuaState::GetStackValue(int a_StackPos, cUUID & a_Value)
+{
+	if (lua_isnil(m_LuaState, a_StackPos))
+	{
+		return false;
+	}
+
+	tolua_Error tolua_Err;
+	if (tolua_isusertype(m_LuaState, a_StackPos, "cUUID", 0, &tolua_Err))
+	{
+		// Found a cUUID, copy into output value
+		cUUID * PtrUUID = nullptr;
+		GetStackValue(a_StackPos, PtrUUID);
+		if (PtrUUID == nullptr)
+		{
+			return false;
+		}
+		a_Value = *PtrUUID;
+		return true;
+	}
+
+	// Try to get a string and parse as a UUID into the output
+	AString StrUUID;
+	if (!GetStackValue(a_StackPos, StrUUID))
+	{
+		return false;
+	}
+	return a_Value.FromString(StrUUID);
 }
 
 
@@ -1742,6 +1820,47 @@ bool cLuaState::CheckParamFunctionOrNil(int a_StartParam, int a_EndParam)
 
 
 
+bool cLuaState::CheckParamUUID(int a_StartParam, int a_EndParam)
+{
+	ASSERT(IsValid());
+
+	if (a_EndParam < 0)
+	{
+		a_EndParam = a_StartParam;
+	}
+
+	cUUID tempUUID;
+	AString tempStr;
+	// Accept either a cUUID or a string that contains a valid UUID
+	for (int i = a_StartParam; i <= a_EndParam; ++i)
+	{
+		tolua_Error err;
+		if (tolua_isusertype(m_LuaState, i, "cUUID", 0, &err) && !lua_isnil(m_LuaState, i))
+		{
+			continue;
+		}
+
+		if (!tolua_iscppstring(m_LuaState, i, 0, &err))
+		{
+			ApiParamError("Failed to read parameter #%d. UUID expected, got %s", i, GetTypeText(i).c_str());
+			return false;
+		}
+
+		// Check string is a valid UUID
+		GetStackValue(i, tempStr);
+		if (!tempUUID.FromString(tempStr))
+		{
+			ApiParamError("Failed to read parameter #%d. UUID expected, got non-UUID string:\n\t\"%s\"", i, tempStr.c_str());
+			return false;
+		}
+	}
+	return true;
+}
+
+
+
+
+
 bool cLuaState::CheckParamEnd(int a_Param)
 {
 	tolua_Error tolua_err;
@@ -1754,6 +1873,56 @@ bool cLuaState::CheckParamEnd(int a_Param)
 	VERIFY(lua_getstack(m_LuaState, 0,   &entry));
 	VERIFY(lua_getinfo (m_LuaState, "n", &entry));
 	AString ErrMsg = Printf("#ferror in function '%s': Too many arguments.", (entry.name != nullptr) ? entry.name : "?");
+	tolua_error(m_LuaState, ErrMsg.c_str(), &tolua_err);
+	return false;
+}
+
+
+
+
+
+bool cLuaState::CheckParamSelf(const char * a_SelfClassName)
+{
+	tolua_Error tolua_err;
+	if (tolua_isusertype(m_LuaState, 1, a_SelfClassName, 0, &tolua_err) && !lua_isnil(m_LuaState, 1))
+	{
+		return true;
+	}
+
+	// Not the correct parameter
+	lua_Debug entry;
+	VERIFY(lua_getstack(m_LuaState, 0,   &entry));
+	VERIFY(lua_getinfo (m_LuaState, "n", &entry));
+	AString ErrMsg = Printf(
+		"Error in function '%s'. The 'self' parameter is not of the expected type, \"instance of %s\". " \
+		"Make sure you're using the correct calling convention (obj:fn() instead of obj.fn()).",
+		(entry.name != nullptr) ? entry.name : "<unknown>", a_SelfClassName
+	);
+	tolua_error(m_LuaState, ErrMsg.c_str(), &tolua_err);
+	return false;
+}
+
+
+
+
+
+bool cLuaState::CheckParamStaticSelf(const char * a_SelfClassName)
+{
+	tolua_Error tolua_err;
+	if (tolua_isusertable(m_LuaState, 1, a_SelfClassName, 0, &tolua_err) && !lua_isnil(m_LuaState, 1))
+	{
+		return true;
+	}
+
+	// Not the correct parameter
+	lua_Debug entry;
+	VERIFY(lua_getstack(m_LuaState, 0,   &entry));
+	VERIFY(lua_getinfo (m_LuaState, "n", &entry));
+	AString ErrMsg = Printf(
+		"Error in function '%s'. The 'self' parameter is not of the expected type, \"class %s\". " \
+		"Make sure you're using the correct calling convention (cClassName:fn() instead of cClassName.fn() or obj:fn()).",
+		(entry.name != nullptr) ? entry.name : "<unknown>", a_SelfClassName
+	);
 	tolua_error(m_LuaState, ErrMsg.c_str(), &tolua_err);
 	return false;
 }
@@ -1833,6 +2002,46 @@ void cLuaState::LogStackTrace(lua_State * a_LuaState, int a_StartingDepth)
 		depth++;
 	}
 	LOGWARNING("Stack trace end");
+}
+
+
+
+
+
+int cLuaState::ApiParamError(const char * a_MsgFormat, ...)
+{
+	// Retrieve current function name
+	lua_Debug entry;
+	VERIFY(lua_getstack(m_LuaState, 0, &entry));
+	VERIFY(lua_getinfo(m_LuaState, "n", &entry));
+
+	// Compose the error message:
+	va_list argp;
+	va_start(argp, a_MsgFormat);
+	AString msg;
+
+	#ifdef __clang__
+		#pragma clang diagnostic push
+		#pragma clang diagnostic ignored "-Wformat-nonliteral"
+	#endif
+
+	AppendVPrintf(msg, a_MsgFormat, argp);
+
+	#ifdef __clang__
+		#pragma clang diagnostic pop
+	#endif
+
+	va_end(argp);
+	AString errorMsg = Printf("%s: %s", (entry.name != nullptr) ? entry.name : "<unknown function>", msg.c_str());
+
+	// Log everything into the console:
+	LOGWARNING("%s", errorMsg.c_str());
+	// cLuaState::LogStackTrace(a_LuaState);  // Do NOT log stack trace, it is already output as part of the Lua error handling
+	LogStackValues(m_LuaState, "Parameters on the stack");
+
+	// Raise Lua error:
+	lua_pushstring(m_LuaState, errorMsg.c_str());
+	return lua_error(m_LuaState);
 }
 
 

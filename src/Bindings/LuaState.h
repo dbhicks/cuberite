@@ -35,9 +35,11 @@ extern "C"
 	#include "lua/src/lauxlib.h"
 }
 
-#include <atomic>
-#include "../Vector3.h"
+
+#include <functional>
+
 #include "../Defines.h"
+#include "../FunctionRef.h"
 #include "PluginManager.h"
 #include "LuaState_Typedefs.inc"
 
@@ -45,7 +47,6 @@ extern "C"
 class cLuaServerHandle;
 class cLuaTCPLink;
 class cLuaUDPEndpoint;
-class cPluginLua;
 class cDeadlockDetect;
 
 
@@ -77,7 +78,7 @@ public:
 				}
 			}
 
-			~cStackBalanceCheck() NO_THROW
+			~cStackBalanceCheck() CAN_THROW
 			{
 				auto currStackPos = lua_gettop(m_LuaState);
 				if (currStackPos != m_StackPos)
@@ -117,7 +118,7 @@ public:
 		{
 		}
 
-		~cStackBalancePopper() NO_THROW
+		~cStackBalancePopper() CAN_THROW
 		{
 			auto curTop = lua_gettop(m_LuaState);
 			if (curTop > m_Count)
@@ -270,8 +271,8 @@ public:
 		Use a smart pointer for a copyable object. */
 		cTrackedRef(cTrackedRef &&) = delete;
 	};
-	typedef UniquePtr<cTrackedRef> cTrackedRefPtr;
-	typedef SharedPtr<cTrackedRef> cTrackedRefSharedPtr;
+	typedef std::unique_ptr<cTrackedRef> cTrackedRefPtr;
+	typedef std::shared_ptr<cTrackedRef> cTrackedRefSharedPtr;
 
 
 	/** Represents a stored callback to Lua that C++ code can call.
@@ -324,8 +325,8 @@ public:
 		Use cCallbackPtr for a copyable object. */
 		cCallback(cCallback &&) = delete;
 	};
-	typedef UniquePtr<cCallback> cCallbackPtr;
-	typedef SharedPtr<cCallback> cCallbackSharedPtr;
+	typedef std::unique_ptr<cCallback> cCallbackPtr;
+	typedef std::shared_ptr<cCallback> cCallbackSharedPtr;
 
 
 	/** Same thing as cCallback, but GetStackValue() won't fail if the callback value is nil.
@@ -354,7 +355,7 @@ public:
 		Use cCallbackPtr for a copyable object. */
 		cOptionalCallback(cOptionalCallback &&) = delete;
 	};
-	typedef UniquePtr<cOptionalCallback> cOptionalCallbackPtr;
+	typedef std::unique_ptr<cOptionalCallback> cOptionalCallbackPtr;
 
 
 	/** Represents a stored Lua table with callback functions that C++ code can call.
@@ -416,7 +417,7 @@ public:
 		Returns true on success, false on failure (not a table at the specified stack pos). */
 		bool RefStack(cLuaState & a_LuaState, int a_StackPos);
 	};
-	typedef UniquePtr<cTableRef> cTableRefPtr;
+	typedef std::unique_ptr<cTableRef> cTableRefPtr;
 
 
 	/** Represents a parameter that is optional - calling a GetStackValue() with this object will not fail if the value on the Lua stack is nil.
@@ -476,7 +477,7 @@ public:
 			std::swap(m_StackLen, a_Src.m_StackLen);
 		}
 
-		~cStackValue() NO_THROW
+		~cStackValue() CAN_THROW
 		{
 			if (m_LuaState != nullptr)
 			{
@@ -521,14 +522,14 @@ public:
 		The callback receives the LuaState in which the table resides, and the element's index. The LuaState has
 		the element on top of its stack. If the callback returns true, the iteration is aborted, if it returns
 		false, the iteration continues with the next element. */
-		void ForEachArrayElement(std::function<bool(cLuaState & a_LuaState, int a_Index)> a_ElementCallback) const;
+		void ForEachArrayElement(cFunctionRef<bool(cLuaState & a_LuaState, int a_Index)> a_ElementCallback) const;
 
 		/** Iterates over all dictionary elements in the table in random order, and calls the a_ElementCallback for
 		each of them.
 		The callback receives the LuaState in which the table reside. The LuaState has the element on top of its
 		stack, and the element's key just below it. If the callback returns true, the iteration is aborted, if it
 		returns false, the iteration continues with the next element. */
-		void ForEachElement(std::function<bool(cLuaState & a_LuaState)> a_ElementCallback) const;
+		void ForEachElement(cFunctionRef<bool(cLuaState & a_LuaState)> a_ElementCallback) const;
 
 		cLuaState & GetLuaState(void) const { return m_LuaState; }
 
@@ -539,7 +540,7 @@ public:
 		/** The stack index where the table resides in the Lua state. */
 		int m_StackPos;
 	};
-	typedef UniquePtr<cStackTable> cStackTablePtr;
+	typedef std::unique_ptr<cStackTable> cStackTablePtr;
 
 
 	/** Creates a new instance. The LuaState is not initialized.
@@ -614,6 +615,7 @@ public:
 	void Push(const AStringMap & a_Dictionary);
 	void Push(const AStringVector & a_Vector);
 	void Push(const char * a_Value);
+	void Push(const cItem & a_Item);
 	void Push(const cNil & a_Nil);
 	void Push(const cRef & a_Ref);
 	void Push(const Vector3d & a_Vector);
@@ -639,6 +641,7 @@ public:
 	// Enum values are checked for their allowed values and fail if the value is not assigned.
 	bool GetStackValue(int a_StackPos, AString & a_Value);
 	bool GetStackValue(int a_StackPos, AStringMap & a_Value);
+	bool GetStackValue(int a_StackPos, AStringVector & a_Value);
 	bool GetStackValue(int a_StackPos, bool & a_Value);
 	bool GetStackValue(int a_StackPos, cCallback & a_Callback);
 	bool GetStackValue(int a_StackPos, cCallbackPtr & a_Callback);
@@ -657,13 +660,14 @@ public:
 	bool GetStackValue(int a_StackPos, eBlockFace & a_Value);
 	bool GetStackValue(int a_StackPos, eWeather & a_Value);
 	bool GetStackValue(int a_StackPos, float & a_ReturnedVal);
+	bool GetStackValue(int a_StackPos, cUUID & a_Value);
 
 	// template to catch all of the various c++ integral types without overload conflicts
 	template <class T>
 	bool GetStackValue(int a_StackPos, T & a_ReturnedVal, typename std::enable_if<std::is_integral<T>::value>::type * unused = nullptr)
 	{
 		UNUSED(unused);
-		if (!lua_isnumber(m_LuaState, a_StackPos))  // Also accepts strings representing a number: http://pgl.yoyo.org/luai/i/lua_isnumber
+		if (!lua_isnumber(m_LuaState, a_StackPos))  // Also accepts strings representing a number: https://pgl.yoyo.org/luai/i/lua_isnumber
 		{
 			return false;
 		}
@@ -785,8 +789,20 @@ public:
 	/** Returns true if the specified parameters on the stack are functions or nils; also logs warning if not */
 	bool CheckParamFunctionOrNil(int a_StartParam, int a_EndParam = -1);
 
+	/** Returns true if the specified parameters on the stack are UUIDs; also logs warning if not
+	Accepts either cUUID instances or strings that contain UUIDs */
+	bool CheckParamUUID(int a_StartParam, int a_EndParam = -1);
+
 	/** Returns true if the specified parameter on the stack is nil (indicating an end-of-parameters) */
 	bool CheckParamEnd(int a_Param);
+
+	/** Returns true if the first parameter is an instance of the expected class name.
+	Returns false and logs a special warning ("wrong calling convention") if not. */
+	bool CheckParamSelf(const char * a_SelfClassName);
+
+	/** Returns true if the first parameter is the expected class (static).
+	Returns false and logs a special warning ("wrong calling convention") if not. */
+	bool CheckParamStaticSelf(const char * a_SelfClassName);
 
 	bool IsParamUserType(int a_Param, AString a_UserType);
 
@@ -803,6 +819,11 @@ public:
 
 	/** Logs all items in the current stack trace to the server console */
 	static void LogStackTrace(lua_State * a_LuaState, int a_StartingDepth = 0);
+
+	/** Formats and prints the message, prefixed with the current function name, then logs the stack contents and raises a Lua error.
+	To be used for bindings when they detect bad parameters.
+	Doesn't return, but a dummy return type is provided so that Lua API functions may do "return ApiParamError(...)". */
+	int ApiParamError(const char * a_MsgFormat, ...);
 
 	/** Returns the type of the item on the specified position in the stack */
 	AString GetTypeText(int a_StackPos);

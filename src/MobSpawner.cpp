@@ -45,12 +45,12 @@ bool cMobSpawner::CheckPackCenter(BLOCKTYPE a_BlockType)
 
 
 
-void cMobSpawner::addIfAllowed(eMonsterType toAdd, std::set<eMonsterType>& toAddIn)
+void cMobSpawner::addIfAllowed(eMonsterType toAdd, std::vector<eMonsterType> & toAddIn)
 {
 	std::set<eMonsterType>::iterator itr = m_AllowedTypes.find(toAdd);
 	if (itr != m_AllowedTypes.end())
 	{
-		toAddIn.insert(toAdd);
+		toAddIn.push_back(toAdd);
 	}
 }
 
@@ -60,7 +60,7 @@ void cMobSpawner::addIfAllowed(eMonsterType toAdd, std::set<eMonsterType>& toAdd
 
 eMonsterType cMobSpawner::ChooseMobType(EMCSBiome a_Biome)
 {
-	std::set<eMonsterType> allowedMobs;
+	std::vector<eMonsterType> allowedMobs;
 
 	if ((a_Biome == biMushroomIsland) || (a_Biome == biMushroomShore))
 	{
@@ -107,15 +107,11 @@ eMonsterType cMobSpawner::ChooseMobType(EMCSBiome a_Biome)
 		}
 	}
 
+	// Pick a random mob from the options:
 	size_t allowedMobsSize = allowedMobs.size();
 	if (allowedMobsSize > 0)
 	{
-		std::set<eMonsterType>::iterator itr = allowedMobs.begin();
-
-		using DiffType = decltype(itr)::difference_type;
-		std::advance(itr, GetRandomProvider().RandInt<DiffType>(allowedMobsSize - 1));
-
-		return *itr;
+		return allowedMobs[GetRandomProvider().RandInt(allowedMobsSize - 1)];
 	}
 	return mtInvalidType;
 }
@@ -346,13 +342,12 @@ bool cMobSpawner::CanSpawnHere(cChunk * a_Chunk, int a_RelX, int a_RelY, int a_R
 
 cMonster * cMobSpawner::TryToSpawnHere(cChunk * a_Chunk, int a_RelX, int a_RelY, int a_RelZ, EMCSBiome a_Biome, int & a_MaxPackSize)
 {
-	cMonster * toReturn = nullptr;
 	if (m_NewPack)
 	{
 		m_MobType = ChooseMobType(a_Biome);
 		if (m_MobType == mtInvalidType)
 		{
-			return toReturn;
+			return nullptr;
 		}
 		if (m_MobType == mtWolf)
 		{
@@ -370,14 +365,16 @@ cMonster * cMobSpawner::TryToSpawnHere(cChunk * a_Chunk, int a_RelX, int a_RelY,
 
 	if ((m_AllowedTypes.find(m_MobType) != m_AllowedTypes.end()) && CanSpawnHere(a_Chunk, a_RelX, a_RelY, a_RelZ, m_MobType, a_Biome))
 	{
-		cMonster * newMob = cMonster::NewMonsterFromType(m_MobType);
+		auto newMob = cMonster::NewMonsterFromType(m_MobType);
+		auto NewMobPtr = newMob.get();
 		if (newMob)
 		{
-			m_Spawned.insert(newMob);
+			m_Spawned.push_back(std::move(newMob));
 		}
-		toReturn = newMob;
+		return NewMobPtr;
 	}
-	return toReturn;
+
+	return nullptr;
 }
 
 
@@ -387,15 +384,6 @@ cMonster * cMobSpawner::TryToSpawnHere(cChunk * a_Chunk, int a_RelX, int a_RelY,
 void cMobSpawner::NewPack()
 {
 	m_NewPack = true;
-}
-
-
-
-
-
-cMobSpawner::tSpawnedContainer & cMobSpawner::getSpawned(void)
-{
-	return m_Spawned;
 }
 
 

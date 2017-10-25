@@ -15,6 +15,7 @@ Implements the 1.10 protocol classes:
 
 #include "../Root.h"
 #include "../Server.h"
+#include "../ClientHandle.h"
 
 #include "../WorldStorage/FastNBT.h"
 
@@ -303,7 +304,7 @@ void cProtocol_1_10_0::SendSoundEffect(const AString & a_SoundName, double a_X, 
 {
 	ASSERT(m_State == 3);  // In game mode?
 
-	cPacketizer Pkt(*this, 0x19);  // Named sound effect packet
+	cPacketizer Pkt(*this, GetPacketId(sendSoundEffect));  // Named sound effect packet
 	Pkt.WriteString(a_SoundName);
 	Pkt.WriteVarInt32(0);  // Master sound category (may want to be changed to a parameter later)
 	Pkt.WriteBEInt32(FloorC(a_X * 8.0));
@@ -321,8 +322,8 @@ void cProtocol_1_10_0::HandlePacketStatusRequest(cByteBuffer & a_ByteBuffer)
 {
 	cServer * Server = cRoot::Get()->GetServer();
 	AString ServerDescription = Server->GetDescription();
-	int NumPlayers = Server->GetNumPlayers();
-	int MaxPlayers = Server->GetMaxPlayers();
+	auto NumPlayers = static_cast<signed>(Server->GetNumPlayers());
+	auto MaxPlayers = static_cast<signed>(Server->GetMaxPlayers());
 	AString Favicon = Server->GetFaviconData();
 	cRoot::Get()->GetPluginManager()->CallHookServerPing(*m_Client, ServerDescription, NumPlayers, MaxPlayers, Favicon);
 
@@ -346,6 +347,7 @@ void cProtocol_1_10_0::HandlePacketStatusRequest(cByteBuffer & a_ByteBuffer)
 	ResponseValue["version"] = Version;
 	ResponseValue["players"] = Players;
 	ResponseValue["description"] = Description;
+	m_Client->ForgeAugmentServerListPing(ResponseValue);
 	if (!Favicon.empty())
 	{
 		ResponseValue["favicon"] = Printf("data:image/png;base64,%s", Favicon.c_str());
@@ -617,9 +619,9 @@ void cProtocol_1_10_0::WriteBlockEntity(cPacketizer & a_Pkt, const cBlockEntity 
 			Writer.AddByte("Rot", MobHeadEntity.GetRotation() & 0xFF);
 			Writer.AddString("id", "Skull");  // "Tile Entity ID" - MC wiki; vanilla server always seems to send this though
 
-			// The new Block Entity format for a Mob Head. See: http://minecraft.gamepedia.com/Head#Block_entity
+			// The new Block Entity format for a Mob Head. See: https://minecraft.gamepedia.com/Head#Block_entity
 			Writer.BeginCompound("Owner");
-			Writer.AddString("Id", MobHeadEntity.GetOwnerUUID());
+			Writer.AddString("Id", MobHeadEntity.GetOwnerUUID().ToShortString());
 			Writer.AddString("Name", MobHeadEntity.GetOwnerName());
 			Writer.BeginCompound("Properties");
 			Writer.BeginList("textures", TAG_Compound);
@@ -704,6 +706,26 @@ void cProtocol_1_10_0::WriteMobMetadata(cPacketizer & a_Pkt, const cMonster & a_
 			a_Pkt.WriteBEInt8(Bat.IsHanging() ? 1 : 0);
 			break;
 		}  // case mtBat
+
+		case mtChicken:
+		{
+			auto & Chicken = reinterpret_cast<const cChicken &>(a_Mob);
+
+			a_Pkt.WriteBEUInt8(AGEABLE_BABY);
+			a_Pkt.WriteBEUInt8(METADATA_TYPE_BOOL);
+			a_Pkt.WriteBool(Chicken.IsBaby());
+			break;
+		}  // case mtChicken
+
+		case mtCow:
+		{
+			auto & Cow = reinterpret_cast<const cCow &>(a_Mob);
+
+			a_Pkt.WriteBEUInt8(AGEABLE_BABY);
+			a_Pkt.WriteBEUInt8(METADATA_TYPE_BOOL);
+			a_Pkt.WriteBool(Cow.IsBaby());
+			break;
+		}  // case mtCow
 
 		case mtCreeper:
 		{
@@ -819,26 +841,6 @@ void cProtocol_1_10_0::WriteMobMetadata(cPacketizer & a_Pkt, const cMonster & a_
 			break;
 		}  // case mtOcelot
 
-		case mtCow:
-		{
-			auto & Cow = reinterpret_cast<const cCow &>(a_Mob);
-
-			a_Pkt.WriteBEUInt8(AGEABLE_BABY);
-			a_Pkt.WriteBEUInt8(METADATA_TYPE_BOOL);
-			a_Pkt.WriteBool(Cow.IsBaby());
-			break;
-		}  // case mtCow
-
-		case mtChicken:
-		{
-			auto & Chicken = reinterpret_cast<const cChicken &>(a_Mob);
-
-			a_Pkt.WriteBEUInt8(AGEABLE_BABY);
-			a_Pkt.WriteBEUInt8(METADATA_TYPE_BOOL);
-			a_Pkt.WriteBool(Chicken.IsBaby());
-			break;
-		}  // case mtChicken
-
 		case mtPig:
 		{
 			auto & Pig = reinterpret_cast<const cPig &>(a_Mob);
@@ -853,6 +855,19 @@ void cProtocol_1_10_0::WriteMobMetadata(cPacketizer & a_Pkt, const cMonster & a_
 
 			break;
 		}  // case mtPig
+
+		case mtRabbit:
+		{
+			auto & Rabbit = reinterpret_cast<const cRabbit &>(a_Mob);
+			a_Pkt.WriteBEUInt8(AGEABLE_BABY);
+			a_Pkt.WriteBEUInt8(METADATA_TYPE_BOOL);
+			a_Pkt.WriteBool(Rabbit.IsBaby());
+
+			a_Pkt.WriteBEUInt8(RABBIT_TYPE);
+			a_Pkt.WriteBEUInt8(METADATA_TYPE_VARINT);
+			a_Pkt.WriteVarInt32(static_cast<UInt32>(Rabbit.GetRabbitType()));
+			break;
+		}  // case mtRabbit
 
 		case mtSheep:
 		{
@@ -873,19 +888,6 @@ void cProtocol_1_10_0::WriteMobMetadata(cPacketizer & a_Pkt, const cMonster & a_
 			a_Pkt.WriteBEInt8(SheepMetadata);
 			break;
 		}  // case mtSheep
-
-		case mtRabbit:
-		{
-			auto & Rabbit = reinterpret_cast<const cRabbit &>(a_Mob);
-			a_Pkt.WriteBEUInt8(AGEABLE_BABY);
-			a_Pkt.WriteBEUInt8(METADATA_TYPE_BOOL);
-			a_Pkt.WriteBool(Rabbit.IsBaby());
-
-			a_Pkt.WriteBEUInt8(RABBIT_TYPE);
-			a_Pkt.WriteBEUInt8(METADATA_TYPE_VARINT);
-			a_Pkt.WriteVarInt32(static_cast<UInt32>(Rabbit.GetRabbitType()));
-			break;
-		}  // case mtRabbit
 
 		case mtSkeleton:
 		{
@@ -1001,5 +1003,7 @@ void cProtocol_1_10_0::WriteMobMetadata(cPacketizer & a_Pkt, const cMonster & a_
 			a_Pkt.WriteBool(ZombiePigman.IsBaby());
 			break;
 		}  // case mtZombiePigman
+
+		default: break;
 	}  // switch (a_Mob.GetType())
 }

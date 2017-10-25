@@ -81,7 +81,7 @@ protected:
 			{
 				Vector3d Intersection = LineStart + m_Projectile->GetSpeed() * LineCoeff;  // Point where projectile goes into the hit block
 
-				if (cPluginManager::Get()->CallHookProjectileHitBlock(*m_Projectile, a_BlockX, a_BlockY, a_BlockZ, Face, &Intersection))
+				if (cPluginManager::Get()->CallHookProjectileHitBlock(*m_Projectile, a_BlockX, a_BlockY, a_BlockZ, Face, Intersection))
 				{
 					return false;
 				}
@@ -126,8 +126,7 @@ protected:
 ////////////////////////////////////////////////////////////////////////////////
 // cProjectileEntityCollisionCallback:
 
-class cProjectileEntityCollisionCallback :
-	public cEntityCallback
+class cProjectileEntityCollisionCallback
 {
 public:
 	cProjectileEntityCollisionCallback(cProjectileEntity * a_Projectile, const Vector3d & a_Pos, const Vector3d & a_NextPos) :
@@ -140,11 +139,11 @@ public:
 	}
 
 
-	virtual bool Item(cEntity * a_Entity) override
+	bool operator () (cEntity & a_Entity)
 	{
 		if (
-			(a_Entity == m_Projectile) ||          // Do not check collisions with self
-			(a_Entity->GetUniqueID() == m_Projectile->GetCreatorUniqueID())  // Do not check whoever shot the projectile
+			(&a_Entity == m_Projectile) ||          // Do not check collisions with self
+			(a_Entity.GetUniqueID() == m_Projectile->GetCreatorUniqueID())  // Do not check whoever shot the projectile
 		)
 		{
 			// Don't check creator only for the first 5 ticks so that projectiles can collide with the creator
@@ -154,7 +153,7 @@ public:
 			}
 		}
 
-		cBoundingBox EntBox(a_Entity->GetPosition(), a_Entity->GetWidth() / 2, a_Entity->GetHeight());
+		cBoundingBox EntBox(a_Entity.GetPosition(), a_Entity.GetWidth() / 2, a_Entity.GetHeight());
 
 		// Instead of colliding the bounding box with another bounding box in motion, we collide an enlarged bounding box with a hairline.
 		// The results should be good enough for our purposes
@@ -168,20 +167,20 @@ public:
 		}
 
 		if (
-			!a_Entity->IsMob() &&
-			!a_Entity->IsMinecart() &&
+			!a_Entity.IsMob() &&
+			!a_Entity.IsMinecart() &&
 			(
-				!a_Entity->IsPlayer() ||
-				static_cast<cPlayer *>(a_Entity)->IsGameModeSpectator()
+				!a_Entity.IsPlayer() ||
+				static_cast<cPlayer &>(a_Entity).IsGameModeSpectator()
 			) &&
-			!a_Entity->IsBoat()
+			!a_Entity.IsBoat()
 		)
 		{
 			// Not an entity that interacts with a projectile
 			return false;
 		}
 
-		if (cPluginManager::Get()->CallHookProjectileHitEntity(*m_Projectile, *a_Entity))
+		if (cPluginManager::Get()->CallHookProjectileHitEntity(*m_Projectile, a_Entity))
 		{
 			// A plugin disagreed.
 			return false;
@@ -191,7 +190,7 @@ public:
 		{
 			// The entity is closer than anything we've stored so far, replace it as the potential victim
 			m_MinCoeff = LineCoeff;
-			m_HitEntity = a_Entity;
+			m_HitEntity = &a_Entity;
 		}
 
 		// Don't break the enumeration, we want all the entities
@@ -260,7 +259,7 @@ cProjectileEntity::cProjectileEntity(eKind a_Kind, cEntity * a_Creator, const Ve
 
 
 
-cProjectileEntity * cProjectileEntity::Create(eKind a_Kind, cEntity * a_Creator, double a_X, double a_Y, double a_Z, const cItem * a_Item, const Vector3d * a_Speed)
+std::unique_ptr<cProjectileEntity> cProjectileEntity::Create(eKind a_Kind, cEntity * a_Creator, double a_X, double a_Y, double a_Z, const cItem * a_Item, const Vector3d * a_Speed)
 {
 	Vector3d Speed;
 	if (a_Speed != nullptr)
@@ -270,15 +269,15 @@ cProjectileEntity * cProjectileEntity::Create(eKind a_Kind, cEntity * a_Creator,
 
 	switch (a_Kind)
 	{
-		case pkArrow:         return new cArrowEntity           (a_Creator, a_X, a_Y, a_Z, Speed);
-		case pkEgg:           return new cThrownEggEntity       (a_Creator, a_X, a_Y, a_Z, Speed);
-		case pkEnderPearl:    return new cThrownEnderPearlEntity(a_Creator, a_X, a_Y, a_Z, Speed);
-		case pkSnowball:      return new cThrownSnowballEntity  (a_Creator, a_X, a_Y, a_Z, Speed);
-		case pkGhastFireball: return new cGhastFireballEntity   (a_Creator, a_X, a_Y, a_Z, Speed);
-		case pkFireCharge:    return new cFireChargeEntity      (a_Creator, a_X, a_Y, a_Z, Speed);
-		case pkExpBottle:     return new cExpBottleEntity       (a_Creator, a_X, a_Y, a_Z, Speed);
-		case pkSplashPotion:  return new cSplashPotionEntity    (a_Creator, a_X, a_Y, a_Z, Speed, *a_Item);
-		case pkWitherSkull:   return new cWitherSkullEntity     (a_Creator, a_X, a_Y, a_Z, Speed);
+		case pkArrow:         return cpp14::make_unique<cArrowEntity>           (a_Creator, a_X, a_Y, a_Z, Speed);
+		case pkEgg:           return cpp14::make_unique<cThrownEggEntity>       (a_Creator, a_X, a_Y, a_Z, Speed);
+		case pkEnderPearl:    return cpp14::make_unique<cThrownEnderPearlEntity>(a_Creator, a_X, a_Y, a_Z, Speed);
+		case pkSnowball:      return cpp14::make_unique<cThrownSnowballEntity>  (a_Creator, a_X, a_Y, a_Z, Speed);
+		case pkGhastFireball: return cpp14::make_unique<cGhastFireballEntity>   (a_Creator, a_X, a_Y, a_Z, Speed);
+		case pkFireCharge:    return cpp14::make_unique<cFireChargeEntity>      (a_Creator, a_X, a_Y, a_Z, Speed);
+		case pkExpBottle:     return cpp14::make_unique<cExpBottleEntity>       (a_Creator, a_X, a_Y, a_Z, Speed);
+		case pkSplashPotion:  return cpp14::make_unique<cSplashPotionEntity>    (a_Creator, a_X, a_Y, a_Z, Speed, *a_Item);
+		case pkWitherSkull:   return cpp14::make_unique<cWitherSkullEntity>     (a_Creator, a_X, a_Y, a_Z, Speed);
 		case pkFirework:
 		{
 			ASSERT(a_Item != nullptr);
@@ -287,7 +286,7 @@ cProjectileEntity * cProjectileEntity::Create(eKind a_Kind, cEntity * a_Creator,
 				return nullptr;
 			}
 
-			return new cFireworkEntity(a_Creator, a_X, a_Y, a_Z, *a_Item);
+			return cpp14::make_unique<cFireworkEntity>(a_Creator, a_X, a_Y, a_Z, *a_Item);
 		}
 		case pkFishingFloat: break;
 	}
@@ -300,7 +299,7 @@ cProjectileEntity * cProjectileEntity::Create(eKind a_Kind, cEntity * a_Creator,
 
 
 
-void cProjectileEntity::OnHitSolidBlock(const Vector3d & a_HitPos, eBlockFace a_HitFace)
+void cProjectileEntity::OnHitSolidBlock(Vector3d a_HitPos, eBlockFace a_HitFace)
 {
 	// Set the position based on what face was hit:
 	SetPosition(a_HitPos);
@@ -320,27 +319,20 @@ void cProjectileEntity::OnHitSolidBlock(const Vector3d & a_HitPos, eBlockFace a_
 
 
 
-void cProjectileEntity::OnHitEntity(cEntity & a_EntityHit, const Vector3d & a_HitPos)
+void cProjectileEntity::OnHitEntity(cEntity & a_EntityHit, Vector3d a_HitPos)
 {
 	UNUSED(a_HitPos);
 
 	// If we were created by a player and we hit a pawn, notify attacking player's wolves
 	if (a_EntityHit.IsPawn() && (GetCreatorName() != ""))
 	{
-		class cNotifyWolves : public cEntityCallback
-		{
-		public:
-			cPawn * m_EntityHit;
-
-			virtual bool Item(cEntity * a_Hitter) override
+		auto EntityHit = static_cast<cPawn *>(&a_EntityHit);
+		m_World->DoWithEntityByID(GetCreatorUniqueID(), [=](cEntity & a_Hitter)
 			{
-				static_cast<cPlayer*>(a_Hitter)->NotifyNearbyWolves(m_EntityHit, true);
+				static_cast<cPlayer&>(a_Hitter).NotifyNearbyWolves(EntityHit, true);
 				return true;
 			}
-		} Callback;
-
-		Callback.m_EntityHit = static_cast<cPawn*>(&a_EntityHit);
-		m_World->DoWithEntityByID(GetCreatorUniqueID(), Callback);
+		);
 	}
 }
 

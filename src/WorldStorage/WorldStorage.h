@@ -11,10 +11,7 @@
 
 
 #pragma once
-#ifndef WORLDSTORAGE_H_INCLUDED
-#define WORLDSTORAGE_H_INCLUDED
 
-#include "../ChunkDef.h"
 #include "../OSSupport/IsThread.h"
 #include "../OSSupport/Queue.h"
 
@@ -72,7 +69,8 @@ public:
 	The callback, if specified, will be called with the result of the save operation. */
 	void QueueSaveChunk(int a_ChunkX, int a_ChunkZ, cChunkCoordCallback * a_Callback = nullptr);
 
-	bool Start(cWorld * a_World, const AString & a_StorageSchemaName, int a_StorageCompressionFactor);  // Hide the cIsThread's Start() method, we need to provide args
+	/** Initializes the storage schemas, ready to be started. */
+	void Initialize(cWorld & a_World, const AString & a_StorageSchemaName, int a_StorageCompressionFactor);
 	void Stop(void);  // Hide the cIsThread's Stop() method, we need to signal the event
 	void WaitForFinish(void);
 	void WaitForLoadQueueEmpty(void);
@@ -112,12 +110,6 @@ protected:
 	/** Saves one chunk from the queue (if any queued); returns true if there are more chunks in the save queue */
 	bool SaveOneChunk(void);
 } ;
-
-
-
-
-
-#endif  // WORLDSTORAGE_H_INCLUDED
 
 
 

@@ -2,7 +2,7 @@
 #pragma once
 
 #include "../Entities/EntityEffect.h"
-#include "../Entities/SplashPotionEntity.h"
+
 
 class cItemPotionHandler:
 	public cItemHandler
@@ -21,7 +21,7 @@ public:
 	virtual bool IsDrinkable(short a_ItemDamage) override
 	{
 		// Drinkable potion if 13th lowest bit is set
-		// Ref.: http://minecraft.gamepedia.com/Potions#Data_value_table
+		// Ref.: https://minecraft.gamepedia.com/Potions#Data_value_table
 		return cEntityEffect::IsPotionDrinkable(a_ItemDamage);
 	}
 

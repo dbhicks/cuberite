@@ -13,9 +13,7 @@
 
 #pragma once
 
-#include <atomic>
 #include <event2/event.h>
-#include "Network.h"
 #include "NetworkLookup.h"
 #include "CriticalSection.h"
 #include "Event.h"
@@ -27,10 +25,10 @@
 // fwd:
 struct event_base;
 class cTCPLinkImpl;
-typedef SharedPtr<cTCPLinkImpl> cTCPLinkImplPtr;
+typedef std::shared_ptr<cTCPLinkImpl> cTCPLinkImplPtr;
 typedef std::vector<cTCPLinkImplPtr> cTCPLinkImplPtrs;
 class cServerHandleImpl;
-typedef SharedPtr<cServerHandleImpl> cServerHandleImplPtr;
+typedef std::shared_ptr<cServerHandleImpl> cServerHandleImplPtr;
 typedef std::vector<cServerHandleImplPtr> cServerHandleImplPtrs;
 
 
@@ -41,7 +39,7 @@ class cNetworkSingleton
 {
 public:
 	cNetworkSingleton();
-	~cNetworkSingleton();
+	~cNetworkSingleton() CAN_THROW;
 
 	/** Returns the singleton instance of this class */
 	static cNetworkSingleton & Get(void);

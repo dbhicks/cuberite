@@ -22,7 +22,7 @@
 	#pragma warning(disable:4702)
 #endif
 
-#include "PolarSSL++/RsaPrivateKey.h"
+#include "mbedTLS++/RsaPrivateKey.h"
 
 #ifdef _MSC_VER
 	#pragma warning(pop)
@@ -33,13 +33,13 @@
 
 
 // fwd:
-class cPlayer;
 class cClientHandle;
-typedef SharedPtr<cClientHandle> cClientHandlePtr;
+typedef std::shared_ptr<cClientHandle> cClientHandlePtr;
 typedef std::list<cClientHandlePtr> cClientHandlePtrs;
 typedef std::list<cClientHandle *> cClientHandles;
 class cCommandOutputCallback;
 class cSettingsRepositoryInterface;
+class cUUID;
 
 
 namespace Json
@@ -67,9 +67,19 @@ public:
 	const AString & GetShutdownMessage(void) const { return m_ShutdownMessage; }
 
 	// Player counts:
-	int  GetMaxPlayers(void) const { return m_MaxPlayers; }
-	int  GetNumPlayers(void) const;
-	void SetMaxPlayers(int a_MaxPlayers) { m_MaxPlayers = a_MaxPlayers; }
+	size_t GetMaxPlayers(void) const { return m_MaxPlayers; }
+	size_t GetNumPlayers(void) const { return m_PlayerCount; }
+	void SetMaxPlayers(size_t a_MaxPlayers) { m_MaxPlayers = a_MaxPlayers; }
+
+	// tolua_end
+
+	/** Add a Forge mod to the server ping list. */
+	bool RegisterForgeMod(const AString & a_ModName, const AString & a_ModVersion, UInt32 a_ProtocolVersionNumber);
+
+	// tolua_begin
+
+	/** Remove a Forge mod to the server ping list. */
+	void UnregisterForgeMod(const AString & a_ModName, UInt32 a_ProtocolVersionNumber);
 
 	/** Check if the player is queued to be transferred to a World.
 	Returns true is Player is found in queue. */
@@ -102,21 +112,18 @@ public:
 	void KickUser(int a_ClientID, const AString & a_Reason);
 
 	/** Authenticates the specified user, called by cAuthenticator */
-	void AuthenticateUser(int a_ClientID, const AString & a_Name, const AString & a_UUID, const Json::Value & a_Properties);
+	void AuthenticateUser(int a_ClientID, const AString & a_Name, const cUUID & a_UUID, const Json::Value & a_Properties);
 
 	const AString & GetServerID(void) const { return m_ServerID; }  // tolua_export
-
-	/** Called by cClientHandle's destructor; stop m_SocketThreads from calling back into a_Client */
-	void ClientDestroying(const cClientHandle * a_Client);
 
 	/** Don't tick a_Client anymore, it will be ticked from its cPlayer instead */
 	void ClientMovedToWorld(const cClientHandle * a_Client);
 
 	/** Notifies the server that a player was created; the server uses this to adjust the number of players */
-	void PlayerCreated(const cPlayer * a_Player);
+	void PlayerCreated();
 
 	/** Notifies the server that a player is being destroyed; the server uses this to adjust the number of players */
-	void PlayerDestroying(const cPlayer * a_Player);
+	void PlayerDestroyed();
 
 	/** Returns base64 encoded favicon data (obtained from favicon.png) */
 	const AString & GetFaviconData(void) const { return m_FaviconData; }
@@ -147,6 +154,9 @@ public:
 	/** Returns true if usernames should be completed across worlds. This is read
 	from the settings. */
 	bool ShouldAllowMultiWorldTabCompletion(void) const { return m_ShouldAllowMultiWorldTabCompletion; }
+
+	/** Get the Forge mods (map of ModName -> ModVersionString) registered for a given protocol. */
+	const AStringMap & GetRegisteredForgeMods(const UInt32 a_Protocol);
 
 private:
 
@@ -182,17 +192,8 @@ private:
 	/** Clients that have just been moved into a world and are to be removed from m_Clients in the next Tick(). */
 	cClientHandles m_ClientsToRemove;
 
-	/** Protects m_PlayerCount against multithreaded access. */
-	mutable cCriticalSection m_CSPlayerCount;
-
 	/** Number of players currently playing in the server. */
-	int m_PlayerCount;
-
-	/** Protects m_PlayerCountDiff against multithreaded access. */
-	cCriticalSection m_CSPlayerCountDiff;
-
-	/** Adjustment to m_PlayerCount to be applied in the Tick thread. */
-	int m_PlayerCountDiff;
+	std::atomic_size_t m_PlayerCount;
 
 	int m_ClientViewDistance;  // The default view distance for clients; settable in Settings.ini
 
@@ -211,8 +212,11 @@ private:
 	AString m_Description;
 	AString m_ShutdownMessage;
 	AString m_FaviconData;
-	int m_MaxPlayers;
+	size_t m_MaxPlayers;
 	bool m_bIsHardcore;
+
+	/** Map of protocol version to Forge mods (map of ModName -> ModVersionString) */
+	std::map<UInt32, AStringMap> m_ForgeModsByVersion;
 
 	/** True - allow same username to login more than once False - only once */
 	bool m_bAllowMultiLogin;
@@ -252,6 +256,9 @@ private:
 
 
 	cServer(void);
+
+	/** Get the Forge mods registered for a given protocol, for modification */
+	AStringMap & RegisteredForgeMods(const UInt32 a_Protocol);
 
 	/** Loads, or generates, if missing, RSA keys for protocol encryption */
 	void PrepareKeys(void);

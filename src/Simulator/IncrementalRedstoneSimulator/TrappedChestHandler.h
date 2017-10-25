@@ -13,66 +13,38 @@ class cTrappedChestHandler : public cRedstoneHandler
 	typedef cRedstoneHandler super;
 public:
 
-	cTrappedChestHandler(cWorld & a_World) :
-		super(a_World)
-	{
-	}
-
-	virtual unsigned char GetPowerDeliveredToPosition(const Vector3i & a_Position, BLOCKTYPE a_BlockType, NIBBLETYPE a_Meta, const Vector3i & a_QueryPosition, BLOCKTYPE a_QueryBlockType) override
+	virtual unsigned char GetPowerDeliveredToPosition(cWorld & a_World, Vector3i a_Position, BLOCKTYPE a_BlockType, NIBBLETYPE a_Meta, Vector3i a_QueryPosition, BLOCKTYPE a_QueryBlockType) const override
 	{
 		UNUSED(a_BlockType);
 		UNUSED(a_Meta);
 		UNUSED(a_QueryPosition);
 		UNUSED(a_QueryBlockType);
 
-		return static_cast<cIncrementalRedstoneSimulator *>(m_World.GetRedstoneSimulator())->GetChunkData()->GetCachedPowerData(a_Position).PowerLevel;
+		return static_cast<cIncrementalRedstoneSimulator *>(a_World.GetRedstoneSimulator())->GetChunkData()->GetCachedPowerData(a_Position).PowerLevel;
 	}
 
-	virtual unsigned char GetPowerLevel(const Vector3i & a_Position, BLOCKTYPE a_BlockType, NIBBLETYPE a_Meta) override
+	virtual unsigned char GetPowerLevel(cWorld & a_World, Vector3i a_Position, BLOCKTYPE a_BlockType, NIBBLETYPE a_Meta) const override
 	{
 		UNUSED(a_BlockType);
 		UNUSED(a_Meta);
 
-		class cGetTrappedChestPlayers :
-			public cItemCallback<cChestEntity>
-		{
-		public:
-			cGetTrappedChestPlayers(void) :
-				m_NumberOfPlayers(0)
+		int NumberOfPlayers = 0;
+		VERIFY(!a_World.DoWithChestAt(a_Position.x, a_Position.y, a_Position.z, [&](cChestEntity & a_Chest)
 			{
-			}
-
-			virtual ~cGetTrappedChestPlayers() override
-			{
-			}
-
-			virtual bool Item(cChestEntity * a_Chest) override
-			{
-				ASSERT(a_Chest->GetBlockType() == E_BLOCK_TRAPPED_CHEST);
-				m_NumberOfPlayers = a_Chest->GetNumberOfPlayers();
+				ASSERT(a_Chest.GetBlockType() == E_BLOCK_TRAPPED_CHEST);
+				NumberOfPlayers = a_Chest.GetNumberOfPlayers();
 				return true;
 			}
-
-			unsigned char GetPowerLevel(void) const
-			{
-				return static_cast<unsigned char>(std::min(m_NumberOfPlayers, 15));
-			}
-
-		private:
-			int m_NumberOfPlayers;
-
-		} GTCP;
-
-		VERIFY(!m_World.DoWithChestAt(a_Position.x, a_Position.y, a_Position.z, GTCP));
-		return GTCP.GetPowerLevel();
+		));
+		return static_cast<unsigned char>(std::min(NumberOfPlayers, 15));
 	}
 
-	virtual cVector3iArray Update(const Vector3i & a_Position, BLOCKTYPE a_BlockType, NIBBLETYPE a_Meta, PoweringData a_PoweringData) override
+	virtual cVector3iArray Update(cWorld & a_World, Vector3i a_Position, BLOCKTYPE a_BlockType, NIBBLETYPE a_Meta, PoweringData a_PoweringData) const override
 	{
 		// LOGD("Evaluating tricky the trapped chest (%d %d %d)", a_Position.x, a_Position.y, a_Position.z);
 
-		auto Power = GetPowerLevel(a_Position, a_BlockType, a_Meta);
-		auto PreviousPower = static_cast<cIncrementalRedstoneSimulator *>(m_World.GetRedstoneSimulator())->GetChunkData()->ExchangeUpdateOncePowerData(a_Position, PoweringData(a_BlockType, Power));
+		auto Power = GetPowerLevel(a_World, a_Position, a_BlockType, a_Meta);
+		auto PreviousPower = static_cast<cIncrementalRedstoneSimulator *>(a_World.GetRedstoneSimulator())->GetChunkData()->ExchangeUpdateOncePowerData(a_Position, PoweringData(a_BlockType, Power));
 
 		if (Power != PreviousPower.PowerLevel)
 		{
@@ -82,8 +54,9 @@ public:
 		return {};
 	}
 
-	virtual cVector3iArray GetValidSourcePositions(const Vector3i & a_Position, BLOCKTYPE a_BlockType, NIBBLETYPE a_Meta) override
+	virtual cVector3iArray GetValidSourcePositions(cWorld & a_World, Vector3i a_Position, BLOCKTYPE a_BlockType, NIBBLETYPE a_Meta) const override
 	{
+		UNUSED(a_World);
 		UNUSED(a_Position);
 		UNUSED(a_BlockType);
 		UNUSED(a_Meta);

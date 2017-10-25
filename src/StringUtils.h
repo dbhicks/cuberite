@@ -8,9 +8,6 @@
 
 #pragma once
 
-#include <string>
-#include <limits>
-
 
 
 typedef std::string AString;
@@ -49,6 +46,9 @@ extern AStringVector StringSplit(const AString & str, const AString & delim);
 Resolves issue #490
 Return the splitted strings as a stringvector. */
 extern AStringVector StringSplitWithQuotes(const AString & str, const AString & delim);
+
+/** Join a list of strings with the given delimiter between entries. */
+AString StringJoin(const AStringVector & a_Strings, const AString & a_Delimiter);
 
 /** Split the string at any of the listed delimiters and trim each value.
 Returns the splitted strings as a stringvector. */

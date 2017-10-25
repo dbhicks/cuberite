@@ -9,7 +9,7 @@
 #include "PluginLua.h"
 #include "Root.h"
 #include "lua/src/lauxlib.h"  // Needed for LUA_REFNIL
-
+#include "ClientHandle.h"
 
 
 
@@ -54,22 +54,15 @@ cLuaWindow::~cLuaWindow()
 	m_Contents.RemoveListener(*this);
 
 	// Close open lua window from players, to avoid dangling pointers
-	class cPlayerCallback : public cPlayerListCallback
-	{
-		virtual bool Item(cPlayer * a_Player)
+	cRoot::Get()->ForEachPlayer([this](cPlayer & a_Player)
 		{
-			if (a_Player->GetWindow() == m_LuaWindow)
+			if (a_Player.GetWindow() == this)
 			{
-				a_Player->CloseWindow(false);
+				a_Player.CloseWindow(false);
 			}
 			return false;
 		}
-		cLuaWindow * m_LuaWindow;
-	public:
-		cPlayerCallback(cLuaWindow & a_LuaWindow) { m_LuaWindow = &a_LuaWindow; }
-	} PlayerCallback(*this);
-
-	cRoot::Get()->ForEachPlayer(PlayerCallback);
+	);
 
 	// Must delete slot areas now, because they are referencing this->m_Contents and would try to access it in cWindow's
 	// destructor, when the member is already gone.
@@ -80,6 +73,19 @@ cLuaWindow::~cLuaWindow()
 	m_SlotAreas.clear();
 
 	ASSERT(m_OpenedBy.empty());
+}
+
+
+
+
+
+void cLuaWindow::SetOnClicked(cLuaState::cCallbackPtr && a_OnClicked)
+{
+	// Only one Lua state can be a cLuaWindow object callback:
+	ASSERT(a_OnClicked->IsSameLuaState(*m_LuaState));
+
+	// Store the new reference, releasing the old one if appropriate:
+	m_OnClicked = std::move(a_OnClicked);
 }
 
 
@@ -201,6 +207,27 @@ void cLuaWindow::OnSlotChanged(cItemGrid * a_ItemGrid, int a_SlotNum)
 	{
 		m_OnSlotChanged->Call(this, a_SlotNum);
 	}
+}
+
+
+
+
+
+void cLuaWindow::Clicked(cPlayer & a_Player, int a_WindowID, short a_SlotNum, eClickAction a_ClickAction, const cItem & a_ClickedItem)
+{
+	if (m_OnClicked != nullptr)
+	{
+		// Plugin can stop a click
+		if (m_OnClicked->Call(this, &a_Player, a_SlotNum, a_ClickAction, a_ClickedItem))
+		{
+			// Tell the client the actual state of the window
+			a_Player.GetClientHandle()->SendInventorySlot(-1, -1, a_Player.GetDraggingItem());
+			BroadcastWholeWindow();
+			return;
+		}
+	}
+
+	cWindow::Clicked(a_Player, a_WindowID, a_SlotNum, a_ClickAction, a_ClickedItem);
 }
 
 

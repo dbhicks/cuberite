@@ -16,7 +16,6 @@ cPieceGenerator instance.
 
 #include "ComposableGenerator.h"
 #include "PrefabPiecePool.h"
-#include "GridStructGen.h"
 
 
 
@@ -44,7 +43,7 @@ protected:
 	Forward-declared so that its implementation changes don't affect the header. */
 	class cGen;
 
-	typedef SharedPtr<cGen> cGenPtr;
+	typedef std::shared_ptr<cGen> cGenPtr;
 	typedef std::vector<cGenPtr> cGenPtrs;
 
 

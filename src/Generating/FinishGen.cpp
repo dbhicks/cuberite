@@ -10,7 +10,6 @@
 #include "Globals.h"
 
 #include "FinishGen.h"
-#include "../BlockID.h"
 #include "../Simulator/FluidSimulator.h"  // for cFluidSimulator::CanWashAway()
 #include "../Simulator/FireSimulator.h"
 #include "../World.h"
@@ -260,7 +259,7 @@ void cFinishGenClumpTopBlock::TryPlaceFoliageClump(cChunkDesc & a_ChunkDesc, int
 		a_ChunkDesc.SetBlockTypeMeta(x, Top + 1, z, a_BlockType, a_BlockMeta);
 		if (a_IsDoubleTall)
 		{
-			a_ChunkDesc.SetBlockTypeMeta(x, Top + 2, z, E_BLOCK_BIG_FLOWER, 0x8 | a_BlockMeta);
+			a_ChunkDesc.SetBlockTypeMeta(x, Top + 2, z, E_BLOCK_BIG_FLOWER, E_META_BIG_FLOWER_TOP);
 			a_ChunkDesc.SetHeight(x, z, static_cast<HEIGHTTYPE>(Top + 2));
 		}
 		else
@@ -554,7 +553,7 @@ void cFinishGenTallGrass::GenFinish(cChunkDesc & a_ChunkDesc)
 				{
 					NIBBLETYPE Meta = (m_Noise.IntNoise2DInt(xx * 100, zz * 100) / 7 % 100) > 25 ? 2 : 3;
 					a_ChunkDesc.SetBlockTypeMeta(x, y, z, E_BLOCK_BIG_FLOWER, Meta);
-					a_ChunkDesc.SetBlockTypeMeta(x, y + 1, z, E_BLOCK_BIG_FLOWER, 0x8 | Meta);
+					a_ChunkDesc.SetBlockTypeMeta(x, y + 1, z, E_BLOCK_BIG_FLOWER, E_META_BIG_FLOWER_TOP);
 					a_ChunkDesc.SetHeight(x, z, static_cast<HEIGHTTYPE>(y + 1));
 				}
 			}
@@ -587,9 +586,11 @@ bool cFinishGenVines::IsJungleVariant(EMCSBiome a_Biome)
 		{
 			return true;
 		}
+		default:
+		{
+			return false;
+		}
 	}
-
-	return false;
 }
 
 
@@ -1061,7 +1062,7 @@ void cFinishGenPreSimulator::GenFinish(cChunkDesc & a_ChunkDesc)
 {
 	if (m_PreSimulateFallingBlocks)
 	{
-		CollapseSandGravel(a_ChunkDesc.GetBlockTypes(), a_ChunkDesc.GetHeightMap());
+		CollapseSandGravel(a_ChunkDesc);
 	}
 
 	if (m_PreSimulateWater)
@@ -1080,10 +1081,7 @@ void cFinishGenPreSimulator::GenFinish(cChunkDesc & a_ChunkDesc)
 
 
 
-void cFinishGenPreSimulator::CollapseSandGravel(
-	cChunkDef::BlockTypes & a_BlockTypes,    // Block types to read and change
-	cChunkDef::HeightMap & a_HeightMap       // Height map to update by the current data
-)
+void cFinishGenPreSimulator::CollapseSandGravel(cChunkDesc & a_ChunkDesc)
 {
 	for (int z = 0; z < cChunkDef::Width; z++)
 	{
@@ -1093,7 +1091,7 @@ void cFinishGenPreSimulator::CollapseSandGravel(
 			int HeightY = 0;
 			for (int y = 0; y < cChunkDef::Height; y++)
 			{
-				BLOCKTYPE Block = cChunkDef::GetBlock(a_BlockTypes, x, y, z);
+				BLOCKTYPE Block = a_ChunkDesc.GetBlockType(x, y, z);
 				switch (Block)
 				{
 					default:
@@ -1123,8 +1121,9 @@ void cFinishGenPreSimulator::CollapseSandGravel(
 					{
 						if (LastY < y - 1)
 						{
-							cChunkDef::SetBlock(a_BlockTypes, x, LastY + 1, z, Block);
-							cChunkDef::SetBlock(a_BlockTypes, x, y, z, E_BLOCK_AIR);
+							auto BlockMeta = a_ChunkDesc.GetBlockMeta(x, y, z);
+							a_ChunkDesc.SetBlockTypeMeta(x, LastY + 1, z, Block, BlockMeta);
+							a_ChunkDesc.SetBlockTypeMeta(x, y, z, E_BLOCK_AIR, 0);
 						}
 						LastY++;
 						if (LastY > HeightY)
@@ -1135,7 +1134,7 @@ void cFinishGenPreSimulator::CollapseSandGravel(
 					}
 				}  // switch (GetBlock)
 			}  // for y
-			cChunkDef::SetHeight(a_HeightMap, x, z, static_cast<HEIGHTTYPE>(HeightY));
+			a_ChunkDesc.SetHeight(x, z, static_cast<HEIGHTTYPE>(HeightY));
 		}  // for x
 	}  // for z
 }
@@ -1490,11 +1489,11 @@ bool cFinishGenPassiveMobs::TrySpawnAnimals(cChunkDesc & a_ChunkDesc, int a_RelX
 	double AnimalY = a_RelY;
 	double AnimalZ = static_cast<double>(a_ChunkDesc.GetChunkZ() * cChunkDef::Width + a_RelZ + 0.5);
 
-	cMonster * NewMob = cMonster::NewMonsterFromType(AnimalToSpawn);
+	auto NewMob = cMonster::NewMonsterFromType(AnimalToSpawn);
 	NewMob->SetHealth(NewMob->GetMaxHealth());
 	NewMob->SetPosition(AnimalX, AnimalY, AnimalZ);
-	a_ChunkDesc.GetEntities().push_back(NewMob);
 	LOGD("Spawning %s #%i at {%.02f, %.02f, %.02f}", NewMob->GetClass(), NewMob->GetUniqueID(), AnimalX, AnimalY, AnimalZ);
+	a_ChunkDesc.GetEntities().emplace_back(std::move(NewMob));
 
 	return true;
 }

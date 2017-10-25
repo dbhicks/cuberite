@@ -5,18 +5,12 @@
 #undef TOLUA_TEMPLATE_BIND
 #include <sstream>
 #include <iomanip>
-#include <array>
 #include "tolua++/include/tolua++.h"
-#include "polarssl/md5.h"
-#include "polarssl/sha1.h"
+#include "mbedtls/md5.h"
+#include "mbedtls/sha1.h"
 #include "PluginLua.h"
 #include "PluginManager.h"
 #include "LuaWindow.h"
-#include "../Root.h"
-#include "../World.h"
-#include "../Entities/Player.h"
-#include "../WebAdmin.h"
-#include "../ClientHandle.h"
 #include "../BlockArea.h"
 #include "../BlockEntities/BeaconEntity.h"
 #include "../BlockEntities/BrewingstandEntity.h"
@@ -29,15 +23,21 @@
 #include "../BlockEntities/NoteEntity.h"
 #include "../BlockEntities/MobHeadEntity.h"
 #include "../BlockEntities/FlowerPotEntity.h"
-#include "../Generating/ChunkDesc.h"
-#include "../LineBlockTracer.h"
-#include "../WorldStorage/SchematicFileSerializer.h"
-#include "../CompositeChat.h"
-#include "../StringCompression.h"
-#include "../CommandOutput.h"
-#include "../BuildInfo.h"
-#include "../HTTP/UrlParser.h"
 #include "../BoundingBox.h"
+#include "../BuildInfo.h"
+#include "../ClientHandle.h"
+#include "../CommandOutput.h"
+#include "../CompositeChat.h"
+#include "../Entities/Player.h"
+#include "../Generating/ChunkDesc.h"
+#include "../HTTP/UrlParser.h"
+#include "../Item.h"
+#include "../LineBlockTracer.h"
+#include "../Server.h"
+#include "../Root.h"
+#include "../StringCompression.h"
+#include "../WebAdmin.h"
+#include "../World.h"
 
 
 
@@ -1483,44 +1483,29 @@ static int tolua_cPluginManager_CallPlugin(lua_State * tolua_S)
 	}
 
 	// Call the destination plugin using a plugin callback:
-	class cCallback :
-		public cPluginManager::cPluginCallback
-	{
-	public:
-		int m_NumReturns;
-
-		cCallback(const AString & a_FunctionName, cLuaState & a_SrcLuaState) :
-			m_NumReturns(0),
-			m_FunctionName(a_FunctionName),
-			m_SrcLuaState(a_SrcLuaState)
+	int NumReturns = 0;
+	auto PluginCallback = [&](cPlugin & a_Plugin)
 		{
-		}
-	protected:
-		const AString & m_FunctionName;
-		cLuaState & m_SrcLuaState;
-
-		virtual bool Item(cPlugin * a_Plugin) override
-		{
-			if (!a_Plugin->IsLoaded())
+			if (!a_Plugin.IsLoaded())
 			{
 				return false;
 			}
-			m_NumReturns = static_cast<cPluginLua *>(a_Plugin)->CallFunctionFromForeignState(
-				m_FunctionName, m_SrcLuaState, 4, lua_gettop(m_SrcLuaState)
+			NumReturns = static_cast<cPluginLua &>(a_Plugin).CallFunctionFromForeignState(
+				FunctionName, L, 4, lua_gettop(L)
 			);
 			return true;
-		}
-	} Callback(FunctionName, L);
-	if (!cPluginManager::Get()->DoWithPlugin(PluginName, Callback))
+		};
+
+	if (!cPluginManager::Get()->DoWithPlugin(PluginName, PluginCallback))
 	{
 		return 0;
 	}
-	if (Callback.m_NumReturns < 0)
+	if (NumReturns < 0)
 	{
 		// The call has failed, there are zero return values. Do NOT return negative number (Lua considers that a "yield")
 		return 0;
 	}
-	return Callback.m_NumReturns;
+	return NumReturns;
 }
 
 
@@ -1659,6 +1644,28 @@ static int tolua_cPlayer_PermissionMatches(lua_State * tolua_S)
 
 	// Push the result of the match:
 	L.Push(cPlayer::PermissionMatches(StringSplit(Permission, "."), StringSplit(Template, ".")));
+	return 1;
+}
+
+
+
+
+
+static int tolua_cPlayer_GetUUID(lua_State * tolua_S)
+{
+	// Check the params:
+	cLuaState L(tolua_S);
+	if (!L.CheckParamSelf("cPlayer"))
+	{
+		return 0;
+	}
+
+	// Get the params:
+	cPlayer * Self = nullptr;
+	L.GetStackValue(1, Self);
+
+	// Return the UUID as a string
+	L.Push(Self->GetUUID().ToShortString());
 	return 1;
 }
 
@@ -1816,7 +1823,7 @@ static int tolua_md5(lua_State * tolua_S)
 	{
 		return 0;
 	}
-	md5(SourceString, len, Output);
+	mbedtls_md5(SourceString, len, Output);
 	lua_pushlstring(tolua_S, reinterpret_cast<const char *>(Output), ARRAYCOUNT(Output));
 	return 1;
 }
@@ -1847,7 +1854,7 @@ static int tolua_md5HexString(lua_State * tolua_S)
 	{
 		return 0;
 	}
-	md5(SourceString, len, md5Output);
+	mbedtls_md5(SourceString, len, md5Output);
 
 	// Convert the md5 checksum to hex string:
 	std::stringstream Output;
@@ -1874,7 +1881,7 @@ static int tolua_sha1(lua_State * tolua_S)
 	{
 		return 0;
 	}
-	sha1(SourceString, len, Output);
+	mbedtls_sha1(SourceString, len, Output);
 	lua_pushlstring(tolua_S, reinterpret_cast<const char *>(Output), ARRAYCOUNT(Output));
 	return 1;
 }
@@ -1893,7 +1900,7 @@ static int tolua_sha1HexString(lua_State * tolua_S)
 	{
 		return 0;
 	}
-	sha1(SourceString, len, sha1Output);
+	mbedtls_sha1(SourceString, len, sha1Output);
 
 	// Convert the sha1 checksum to hex string:
 	std::stringstream Output;
@@ -2319,7 +2326,7 @@ static int tolua_cClientHandle_SendPluginMessage(lua_State * L)
 {
 	cLuaState S(L);
 	if (
-		!S.CheckParamUserType(1, "cClientHandle") ||
+		!S.CheckParamSelf("cClientHandle") ||
 		!S.CheckParamString(2, 3) ||
 		!S.CheckParamEnd(4)
 	)
@@ -2344,13 +2351,166 @@ static int tolua_cClientHandle_SendPluginMessage(lua_State * L)
 
 
 
+static int tolua_cClientHandle_GetForgeMods(lua_State * L)
+{
+	cLuaState S(L);
+	if (
+		!S.CheckParamSelf("cClientHandle") ||
+		!S.CheckParamEnd(2)
+	)
+	{
+		return 0;
+	}
+	cClientHandle * Client;
+	S.GetStackValue(1, Client);
+
+	S.Push(Client->GetForgeMods());
+	return 1;
+}
+
+
+
+
+
+static int tolua_cClientHandle_GetUUID(lua_State * tolua_S)
+{
+	// Check the params:
+	cLuaState L(tolua_S);
+	if (
+		!L.CheckParamSelf("cClientHandle") ||
+		!L.CheckParamEnd(2)
+	)
+	{
+		return 0;
+	}
+
+	// Get the params:
+	cClientHandle * Self;
+	L.GetStackValue(1, Self);
+
+	// Return the UUID as a string:
+	L.Push(Self->GetUUID().ToShortString());
+	return 1;
+}
+
+
+
+
+
+static int tolua_cClientHandle_GenerateOfflineUUID(lua_State * tolua_S)
+{
+	// Check the params:
+	cLuaState L(tolua_S);
+	if (
+		!L.CheckParamStaticSelf("cClientHandle") ||
+		!L.CheckParamString(2) ||
+		!L.CheckParamEnd(3)
+	)
+	{
+		return 0;
+	}
+
+	// Get the params:
+	AString Username;
+	L.GetStackValue(2, Username);
+
+	// Return the UUID as a string:
+	L.Push(cClientHandle::GenerateOfflineUUID(Username).ToShortString());
+	return 1;
+}
+
+
+
+
+
+static int tolua_cClientHandle_IsUUIDOnline(lua_State * tolua_S)
+{
+	// Check the params:
+	cLuaState L(tolua_S);
+	if (
+		!L.CheckParamStaticSelf("cClientHandle") ||
+		!L.CheckParamUUID(2) ||
+		!L.CheckParamEnd(3)
+	)
+	{
+		return 0;
+	}
+
+	// Get the params:
+	cUUID UUID;
+	L.GetStackValue(2, UUID);
+
+	// Return the result:
+	L.Push(cClientHandle::IsUUIDOnline(UUID));
+	return 1;
+}
+
+
+
+
+static int tolua_cMobHeadEntity_SetOwner(lua_State * tolua_S)
+{
+	// Check params:
+	cLuaState L(tolua_S);
+	if (
+		!L.CheckParamSelf("cMobHeadEntity") ||
+		!L.CheckParamUUID(2) ||
+		!L.CheckParamString(3, 5) ||
+		!L.CheckParamEnd(6)
+	)
+	{
+		return 0;
+	}
+
+
+	// Get the params:
+	cMobHeadEntity * Self;
+	cUUID OwnerUUID;
+	AString OwnerName, OwnerTexture, OwnerTextureSignature;
+	L.GetStackValues(1, Self, OwnerUUID, OwnerName, OwnerTexture, OwnerTextureSignature);
+
+	// Set the owner:
+	Self->SetOwner(OwnerUUID, OwnerName, OwnerTexture, OwnerTextureSignature);
+	return 0;
+}
+
+
+
+
+
+static int tolua_cMobHeadEntity_GetOwnerUUID(lua_State * tolua_S)
+{
+	// Check params:
+	cLuaState L(tolua_S);
+	if (
+		!L.CheckParamSelf("cMobHeadEntity") ||
+		!L.CheckParamEnd(2)
+	)
+	{
+		return 0;
+	}
+
+	// Get the params:
+	cMobHeadEntity * Self;
+	L.GetStackValue(1, Self);
+
+	// Return the UUID as a string:
+	cUUID Owner = Self->GetOwnerUUID();
+	L.Push(Owner.IsNil() ? AString{} : Owner.ToShortString());
+	return 1;
+}
+
+
+
+
+
 static int tolua_cMojangAPI_AddPlayerNameToUUIDMapping(lua_State * L)
 {
 	cLuaState S(L);
 	if (
-		!S.CheckParamUserTable(1, "cMojangAPI") ||
+		!S.CheckParamStaticSelf("cMojangAPI") ||
 		!S.CheckParamString(2) ||
-		!S.CheckParamString(3) ||
+		!S.CheckParamUUID(3) ||
 		!S.CheckParamEnd(4)
 	)
 	{
@@ -2358,9 +2518,9 @@ static int tolua_cMojangAPI_AddPlayerNameToUUIDMapping(lua_State * L)
 	}
 
 	// Retrieve the parameters:
-	AString UUID, PlayerName;
-	S.GetStackValue(2, PlayerName);
-	S.GetStackValue(3, UUID);
+	AString PlayerName;
+	cUUID UUID;
+	S.GetStackValues(2, PlayerName, UUID);
 
 	// Store in the cache:
 	cRoot::Get()->GetMojangAPI().AddPlayerNameToUUIDMapping(PlayerName, UUID);
@@ -2375,15 +2535,15 @@ static int tolua_cMojangAPI_GetPlayerNameFromUUID(lua_State * L)
 {
 	cLuaState S(L);
 	if (
-		!S.CheckParamUserTable(1, "cMojangAPI") ||
-		!S.CheckParamString(2) ||
+		!S.CheckParamStaticSelf("cMojangAPI") ||
+		!S.CheckParamUUID(2) ||
 		!S.CheckParamEnd(4)
 	)
 	{
 		return 0;
 	}
 
-	AString UUID;
+	cUUID UUID;
 	S.GetStackValue(2, UUID);
 
 	// If the UseOnlyCached param was given, read it; default to false
@@ -2408,7 +2568,7 @@ static int tolua_cMojangAPI_GetUUIDFromPlayerName(lua_State * L)
 {
 	cLuaState S(L);
 	if (
-		!S.CheckParamUserTable(1, "cMojangAPI") ||
+		!S.CheckParamStaticSelf("cMojangAPI") ||
 		!S.CheckParamString(2) ||
 		!S.CheckParamEnd(4)
 	)
@@ -2427,9 +2587,9 @@ static int tolua_cMojangAPI_GetUUIDFromPlayerName(lua_State * L)
 		lua_pop(L, 1);
 	}
 
-	// Return the UUID:
-	AString UUID = cRoot::Get()->GetMojangAPI().GetUUIDFromPlayerName(PlayerName, ShouldUseCacheOnly);
-	S.Push(UUID);
+	// Return the UUID as a string:
+	cUUID UUID = cRoot::Get()->GetMojangAPI().GetUUIDFromPlayerName(PlayerName, ShouldUseCacheOnly);
+	S.Push(UUID.IsNil() ? AString{} : UUID.ToShortString());
 	return 1;
 }
 
@@ -2441,7 +2601,7 @@ static int tolua_cMojangAPI_GetUUIDsFromPlayerNames(lua_State * L)
 {
 	cLuaState S(L);
 	if (
-		!S.CheckParamUserTable(1, "cMojangAPI") ||
+		!S.CheckParamStaticSelf("cMojangAPI") ||
 		!S.CheckParamTable(2) ||
 		!S.CheckParamEnd(4)
 	)
@@ -2477,23 +2637,23 @@ static int tolua_cMojangAPI_GetUUIDsFromPlayerNames(lua_State * L)
 	lua_newtable(L);
 
 	// Get the UUIDs:
-	AStringVector UUIDs = cRoot::Get()->GetMojangAPI().GetUUIDsFromPlayerNames(PlayerNames, ShouldUseCacheOnly);
+	auto UUIDs = cRoot::Get()->GetMojangAPI().GetUUIDsFromPlayerNames(PlayerNames, ShouldUseCacheOnly);
 	if (UUIDs.size() != PlayerNames.size())
 	{
 		// A hard error has occured while processing the request, no UUIDs were returned. Return an empty table:
 		return 1;
 	}
 
-	// Convert to output table, PlayerName -> UUID:
+	// Convert to output table, PlayerName -> UUID string:
 	size_t len = UUIDs.size();
 	for (size_t i = 0; i < len; i++)
 	{
-		if (UUIDs[i].empty())
+		if (UUIDs[i].IsNil())
 		{
 			// No UUID was provided for PlayerName[i], skip it in the resulting table
 			continue;
 		}
-		lua_pushlstring(L, UUIDs[i].c_str(), UUIDs[i].length());
+		S.Push(UUIDs[i].ToShortString());
 		lua_setfield(L, 3, PlayerNames[i].c_str());
 	}
 	return 1;
@@ -2505,13 +2665,13 @@ static int tolua_cMojangAPI_GetUUIDsFromPlayerNames(lua_State * L)
 
 static int tolua_cMojangAPI_MakeUUIDDashed(lua_State * L)
 {
-	// Function signature: cMojangAPI:MakeUUIDDashed(UUID) -> string
+	// Function now non-existant but kept for API compatibility
 
 	// Check params:
 	cLuaState S(L);
 	if (
-		!S.CheckParamUserTable(1, "cMojangAPI") ||
-		!S.CheckParamString(2) ||
+		!S.CheckParamStaticSelf("cMojangAPI") ||
+		!S.CheckParamUUID(2) ||
 		!S.CheckParamEnd(3)
 	)
 	{
@@ -2519,11 +2679,11 @@ static int tolua_cMojangAPI_MakeUUIDDashed(lua_State * L)
 	}
 
 	// Get the params:
-	AString UUID;
+	cUUID UUID;
 	S.GetStackValue(2, UUID);
 
 	// Push the result:
-	S.Push(cRoot::Get()->GetMojangAPI().MakeUUIDDashed(UUID));
+	S.Push(UUID.ToLongString());
 	return 1;
 }
 
@@ -2533,13 +2693,13 @@ static int tolua_cMojangAPI_MakeUUIDDashed(lua_State * L)
 
 static int tolua_cMojangAPI_MakeUUIDShort(lua_State * L)
 {
-	// Function signature: cMojangAPI:MakeUUIDShort(UUID) -> string
+	// Function now non-existant but kept for API compatibility
 
 	// Check params:
 	cLuaState S(L);
 	if (
 		!S.CheckParamUserTable(1, "cMojangAPI") ||
-		!S.CheckParamString(2) ||
+		!S.CheckParamUUID(2) ||
 		!S.CheckParamEnd(3)
 	)
 	{
@@ -2547,12 +2707,63 @@ static int tolua_cMojangAPI_MakeUUIDShort(lua_State * L)
 	}
 
 	// Get the params:
-	AString UUID;
+	cUUID UUID;
 	S.GetStackValue(2, UUID);
 
 	// Push the result:
-	S.Push(cRoot::Get()->GetMojangAPI().MakeUUIDShort(UUID));
+	S.Push(UUID.ToShortString());
 	return 1;
+}
+
+
+
+
+
+static int tolua_get_cItem_m_LoreTable(lua_State * tolua_S)
+{
+	// Check params:
+	cLuaState L(tolua_S);
+	if (!L.CheckParamSelf("const cItem"))
+	{
+		return 0;
+	}
+
+	// Get the params:
+	const cItem * Self = nullptr;
+	L.GetStackValue(1, Self);
+
+	// Push the result:
+	L.Push(Self->m_LoreTable);
+	return 1;
+}
+
+
+
+
+
+static int tolua_set_cItem_m_LoreTable(lua_State * tolua_S)
+{
+	// Check params:
+	cLuaState L(tolua_S);
+	if (
+		!L.CheckParamSelf("cItem") ||
+		!L.CheckParamTable(2)
+	)
+	{
+		return 0;
+	}
+
+	// Get the params:
+	cItem * Self = nullptr;
+	L.GetStackValue(1, Self);
+
+	// Set the value:
+	Self->m_LoreTable.clear();
+	if (!L.GetStackValue(2, Self->m_LoreTable))
+	{
+		return L.ApiParamError("cItem.m_LoreTable: Could not read value as an array of strings");
+	}
+	return 0;
 }
 
 
@@ -2769,7 +2980,7 @@ static int tolua_cLineBlockTracer_FirstSolidHitTrace(lua_State * tolua_S)
 		Vector3d hitCoords;
 		Vector3i hitBlockCoords;
 		eBlockFace hitBlockFace;
-		auto isHit = cLineBlockTracer::FirstSolidHitTrace(*world, start, end, hitCoords, hitBlockCoords, hitBlockFace);
+		auto isHit = cLineBlockTracer::FirstSolidHitTrace(*world, *start, *end, hitCoords, hitBlockCoords, hitBlockFace);
 		L.Push(isHit);
 		if (!isHit)
 		{
@@ -2867,7 +3078,7 @@ static int tolua_cLineBlockTracer_LineOfSightTrace(lua_State * tolua_S)
 		}
 		int lineOfSight = cLineBlockTracer::losAirWater;
 		L.GetStackValue(idx + 7, lineOfSight);
-		L.Push(cLineBlockTracer::LineOfSightTrace(*world, start, end, lineOfSight));
+		L.Push(cLineBlockTracer::LineOfSightTrace(*world, *start, *end, lineOfSight));
 		return 1;
 	}
 
@@ -2996,6 +3207,53 @@ static int tolua_cLuaWindow_new_local(lua_State * tolua_S)
 	// Create the window, register it for GC and return it:
 	L.Push(new cLuaWindow(L, static_cast<cLuaWindow::WindowType>(windowType), slotsX, slotsY, title));
 	tolua_register_gc(tolua_S, lua_gettop(tolua_S));
+	return 1;
+}
+
+
+
+
+
+static int tolua_cRoot_DoWithPlayerByUUID(lua_State * tolua_S)
+{
+	// Check params:
+	cLuaState L(tolua_S);
+	if (
+		!L.CheckParamSelf("cRoot") ||
+		!L.CheckParamUUID(2) ||
+		!L.CheckParamFunction(3) ||
+		!L.CheckParamEnd(4)
+	)
+	{
+		return 0;
+	}
+
+	// Get parameters:
+	cRoot * Self;
+	cUUID PlayerUUID;
+	cLuaState::cRef FnRef;
+	L.GetStackValues(1, Self, PlayerUUID, FnRef);
+
+	if (PlayerUUID.IsNil())
+	{
+		return L.ApiParamError("Expected a non-nil UUID for parameter #1");
+	}
+	if (!FnRef.IsValid())
+	{
+		return L.ApiParamError("Expected a valid callback function for parameter #2");
+	}
+
+	// Call the function:
+	bool res = Self->DoWithPlayerByUUID(PlayerUUID, [&](cPlayer & a_Player)
+		{
+			bool ret = false;
+			L.Call(FnRef, &a_Player, cLuaState::Return, ret);
+			return ret;
+		}
+	);
+
+	// Push the result as the return value:
+	L.Push(res);
 	return 1;
 }
 
@@ -3135,6 +3393,37 @@ static int tolua_cRoot_GetFurnaceRecipe(lua_State * tolua_S)
 
 
 
+static int tolua_cServer_RegisterForgeMod(lua_State * a_LuaState)
+{
+	cLuaState L(a_LuaState);
+	if (
+		!L.CheckParamSelf("cServer") ||
+		!L.CheckParamString(2, 3) ||
+		!L.CheckParamNumber(4) ||
+		!L.CheckParamEnd(5)
+	)
+	{
+		return 0;
+	}
+
+	cServer * Server;
+	AString Name, Version;
+	UInt32 Protocol;
+	L.GetStackValues(1, Server, Name, Version, Protocol);
+
+	if (!Server->RegisterForgeMod(Name, Version, Protocol))
+	{
+		tolua_error(L, "duplicate Forge mod name registration", nullptr);
+		return 0;
+	}
+
+	return 0;
+}
+
+
+
+
+
 static int tolua_cScoreboard_GetTeamNames(lua_State * L)
 {
 	cLuaState S(L);
@@ -3199,324 +3488,6 @@ static int tolua_cHopperEntity_GetOutputBlockPos(lua_State * tolua_S)
 
 
 
-static int tolua_cBlockArea_GetBlockTypeMeta(lua_State * tolua_S)
-{
-	// function cBlockArea::GetBlockTypeMeta()
-	// Exported manually because tolua generates extra input params for the outputs
-
-	cLuaState L(tolua_S);
-	if (
-		!L.CheckParamUserType(1, "cBlockArea") ||
-		!L.CheckParamNumber  (2, 4)
-	)
-	{
-		return 0;
-	}
-
-	cBlockArea * self = reinterpret_cast<cBlockArea *>(tolua_tousertype(tolua_S, 1, nullptr));
-	if (self == nullptr)
-	{
-		tolua_error(tolua_S, "invalid 'self' in function 'cBlockArea:GetRelBlockTypeMeta'", nullptr);
-		return 0;
-	}
-	int BlockX = static_cast<int>(tolua_tonumber(tolua_S, 2, 0));
-	int BlockY = static_cast<int>(tolua_tonumber(tolua_S, 3, 0));
-	int BlockZ = static_cast<int>(tolua_tonumber(tolua_S, 4, 0));
-	BLOCKTYPE BlockType;
-	NIBBLETYPE BlockMeta;
-	self->GetBlockTypeMeta(BlockX, BlockY, BlockZ, BlockType, BlockMeta);
-	tolua_pushnumber(tolua_S, BlockType);
-	tolua_pushnumber(tolua_S, BlockMeta);
-	return 2;
-}
-
-
-
-
-
-static int tolua_cBlockArea_GetOrigin(lua_State * tolua_S)
-{
-	// function cBlockArea::GetOrigin()
-	// Returns all three coords of the origin point
-	// Exported manually because there's no direct C++ equivalent,
-	// plus tolua would generate extra input params for the outputs
-
-	cLuaState L(tolua_S);
-	if (!L.CheckParamUserType(1, "cBlockArea"))
-	{
-		return 0;
-	}
-
-	cBlockArea * self = reinterpret_cast<cBlockArea *>(tolua_tousertype(tolua_S, 1, nullptr));
-	if (self == nullptr)
-	{
-		tolua_error(tolua_S, "invalid 'self' in function 'cBlockArea:GetOrigin'", nullptr);
-		return 0;
-	}
-
-	// Push the three origin coords:
-	lua_pushnumber(tolua_S, self->GetOriginX());
-	lua_pushnumber(tolua_S, self->GetOriginY());
-	lua_pushnumber(tolua_S, self->GetOriginZ());
-	return 3;
-}
-
-
-
-
-
-static int tolua_cBlockArea_GetNonAirCropRelCoords(lua_State * tolua_S)
-{
-	// function cBlockArea::GetNonAirCropRelCoords()
-	// Exported manually because tolua would generate extra input params for the outputs
-
-	cLuaState L(tolua_S);
-	if (!L.CheckParamUserType(1, "cBlockArea"))
-	{
-		return 0;
-	}
-
-	cBlockArea * self = nullptr;
-	BLOCKTYPE IgnoreBlockType = E_BLOCK_AIR;
-	L.GetStackValues(1, self, IgnoreBlockType);
-	if (self == nullptr)
-	{
-		tolua_error(tolua_S, "invalid 'self' in function 'cBlockArea:GetNonAirCropRelCoords'", nullptr);
-		return 0;
-	}
-
-	// Calculate the crop coords:
-	int MinRelX, MinRelY, MinRelZ, MaxRelX, MaxRelY, MaxRelZ;
-	self->GetNonAirCropRelCoords(MinRelX, MinRelY, MinRelZ, MaxRelX, MaxRelY, MaxRelZ, IgnoreBlockType);
-
-	// Push the six crop coords:
-	L.Push(MinRelX, MinRelY, MinRelZ, MaxRelX, MaxRelY, MaxRelZ);
-	return 6;
-}
-
-
-
-
-
-static int tolua_cBlockArea_GetRelBlockTypeMeta(lua_State * tolua_S)
-{
-	// function cBlockArea::GetRelBlockTypeMeta()
-	// Exported manually because tolua generates extra input params for the outputs
-
-	cLuaState L(tolua_S);
-	if (
-		!L.CheckParamUserType(1, "cBlockArea") ||
-		!L.CheckParamNumber  (2, 4)
-	)
-	{
-		return 0;
-	}
-
-	cBlockArea * self = reinterpret_cast<cBlockArea *>(tolua_tousertype(tolua_S, 1, nullptr));
-	if (self == nullptr)
-	{
-		tolua_error(tolua_S, "invalid 'self' in function 'cBlockArea:GetRelBlockTypeMeta'", nullptr);
-		return 0;
-	}
-	int BlockX = static_cast<int>(tolua_tonumber(tolua_S, 2, 0));
-	int BlockY = static_cast<int>(tolua_tonumber(tolua_S, 3, 0));
-	int BlockZ = static_cast<int>(tolua_tonumber(tolua_S, 4, 0));
-	BLOCKTYPE BlockType;
-	NIBBLETYPE BlockMeta;
-	self->GetRelBlockTypeMeta(BlockX, BlockY, BlockZ, BlockType, BlockMeta);
-	tolua_pushnumber(tolua_S, BlockType);
-	tolua_pushnumber(tolua_S, BlockMeta);
-	return 2;
-}
-
-
-
-
-
-static int tolua_cBlockArea_GetSize(lua_State * tolua_S)
-{
-	// function cBlockArea::GetSize()
-	// Returns all three sizes of the area
-	// Exported manually because there's no direct C++ equivalent,
-	// plus tolua would generate extra input params for the outputs
-
-	cLuaState L(tolua_S);
-	if (!L.CheckParamUserType(1, "cBlockArea"))
-	{
-		return 0;
-	}
-
-	cBlockArea * self = reinterpret_cast<cBlockArea *>(tolua_tousertype(tolua_S, 1, nullptr));
-	if (self == nullptr)
-	{
-		tolua_error(tolua_S, "invalid 'self' in function 'cBlockArea:GetSize'", nullptr);
-		return 0;
-	}
-
-	// Push the three origin coords:
-	lua_pushnumber(tolua_S, self->GetSizeX());
-	lua_pushnumber(tolua_S, self->GetSizeY());
-	lua_pushnumber(tolua_S, self->GetSizeZ());
-	return 3;
-}
-
-
-
-
-
-static int tolua_cBlockArea_GetCoordRange(lua_State * tolua_S)
-{
-	// function cBlockArea::GetCoordRange()
-	// Returns all three sizes of the area, miuns one, so that they represent the maximum coord value
-	// Exported manually because there's no direct C++ equivalent,
-	// plus tolua would generate extra input params for the outputs
-
-	cLuaState L(tolua_S);
-	if (!L.CheckParamUserType(1, "cBlockArea"))
-	{
-		return 0;
-	}
-
-	cBlockArea * self = reinterpret_cast<cBlockArea *>(tolua_tousertype(tolua_S, 1, nullptr));
-	if (self == nullptr)
-	{
-		tolua_error(tolua_S, "invalid 'self' in function 'cBlockArea:GetSize'", nullptr);
-		return 0;
-	}
-
-	// Push the three origin coords:
-	lua_pushnumber(tolua_S, self->GetSizeX() - 1);
-	lua_pushnumber(tolua_S, self->GetSizeY() - 1);
-	lua_pushnumber(tolua_S, self->GetSizeZ() - 1);
-	return 3;
-}
-
-
-
-
-
-static int tolua_cBlockArea_LoadFromSchematicFile(lua_State * tolua_S)
-{
-	// function cBlockArea::LoadFromSchematicFile
-	// Exported manually because function has been moved to SchematicFileSerializer.cpp
-	cLuaState L(tolua_S);
-	if (
-		!L.CheckParamUserType(1, "cBlockArea") ||
-		!L.CheckParamString  (2) ||
-		!L.CheckParamEnd     (3)
-	)
-	{
-		return 0;
-	}
-	cBlockArea * self = reinterpret_cast<cBlockArea *>(tolua_tousertype(tolua_S, 1, nullptr));
-	if (self == nullptr)
-	{
-		tolua_error(tolua_S, "invalid 'self' in function 'cBlockArea::LoadFromSchematicFile'", nullptr);
-		return 0;
-	}
-
-	AString Filename = tolua_tostring(tolua_S, 2, 0);
-	bool res = cSchematicFileSerializer::LoadFromSchematicFile(*self, Filename);
-	tolua_pushboolean(tolua_S, res);
-	return 1;
-}
-
-
-
-
-
-static int tolua_cBlockArea_LoadFromSchematicString(lua_State * tolua_S)
-{
-	// function cBlockArea::LoadFromSchematicString
-	// Exported manually because function has been moved to SchematicFileSerializer.cpp
-	cLuaState L(tolua_S);
-	if (
-		!L.CheckParamUserType(1, "cBlockArea") ||
-		!L.CheckParamString  (2) ||
-		!L.CheckParamEnd     (3)
-	)
-	{
-		return 0;
-	}
-	cBlockArea * self = reinterpret_cast<cBlockArea *>(tolua_tousertype(tolua_S, 1, nullptr));
-	if (self == nullptr)
-	{
-		tolua_error(tolua_S, "invalid 'self' in function 'cBlockArea::LoadFromSchematicFile'", nullptr);
-		return 0;
-	}
-
-	AString Data;
-	L.GetStackValue(2, Data);
-	bool res = cSchematicFileSerializer::LoadFromSchematicString(*self, Data);
-	tolua_pushboolean(tolua_S, res);
-	return 1;
-}
-
-
-
-
-
-static int tolua_cBlockArea_SaveToSchematicFile(lua_State * tolua_S)
-{
-	// function cBlockArea::SaveToSchematicFile
-	// Exported manually because function has been moved to SchematicFileSerializer.cpp
-	cLuaState L(tolua_S);
-	if (
-		!L.CheckParamUserType(1, "cBlockArea") ||
-		!L.CheckParamString  (2) ||
-		!L.CheckParamEnd     (3)
-	)
-	{
-		return 0;
-	}
-	cBlockArea * self = reinterpret_cast<cBlockArea *>(tolua_tousertype(tolua_S, 1, nullptr));
-	if (self == nullptr)
-	{
-		tolua_error(tolua_S, "invalid 'self' in function 'cBlockArea::SaveToSchematicFile'", nullptr);
-		return 0;
-	}
-	AString Filename = tolua_tostring(tolua_S, 2, 0);
-	bool res = cSchematicFileSerializer::SaveToSchematicFile(*self, Filename);
-	tolua_pushboolean(tolua_S, res);
-	return 1;
-}
-
-
-
-
-
-static int tolua_cBlockArea_SaveToSchematicString(lua_State * tolua_S)
-{
-	// function cBlockArea::SaveToSchematicString
-	// Exported manually because function has been moved to SchematicFileSerializer.cpp
-	cLuaState L(tolua_S);
-	if (
-		!L.CheckParamUserType(1, "cBlockArea") ||
-		!L.CheckParamEnd     (2)
-	)
-	{
-		return 0;
-	}
-	cBlockArea * self = reinterpret_cast<cBlockArea *>(tolua_tousertype(tolua_S, 1, nullptr));
-	if (self == nullptr)
-	{
-		tolua_error(tolua_S, "invalid 'self' in function 'cBlockArea::SaveToSchematicFile'", nullptr);
-		return 0;
-	}
-
-	AString Data;
-	if (cSchematicFileSerializer::SaveToSchematicString(*self, Data))
-	{
-		L.Push(Data);
-		return 1;
-	}
-	return 0;
-}
-
-
-
-
-
 static int tolua_cBoundingBox_CalcLineIntersection(lua_State * a_LuaState)
 {
 	/* Function signatures:
@@ -3533,7 +3504,7 @@ static int tolua_cBoundingBox_CalcLineIntersection(lua_State * a_LuaState)
 	bool res;
 	if (L.GetStackValues(2, min, max, pt1, pt2))  // Try the static signature first
 	{
-		res = cBoundingBox::CalcLineIntersection(min, max, pt1, pt2, lineCoeff, blockFace);
+		res = cBoundingBox::CalcLineIntersection(*min, *max, *pt1, *pt2, lineCoeff, blockFace);
 	}
 	else
 	{
@@ -3544,7 +3515,7 @@ static int tolua_cBoundingBox_CalcLineIntersection(lua_State * a_LuaState)
 			tolua_error(a_LuaState, "Invalid function params. Expected either bbox:CalcLineIntersection(pt1, pt2) or cBoundingBox:CalcLineIntersection(min, max, pt1, pt2).", nullptr);
 			return 0;
 		}
-		res = bbox->CalcLineIntersection(pt1, pt2, lineCoeff, blockFace);
+		res = bbox->CalcLineIntersection(*pt1, *pt2, lineCoeff, blockFace);
 	}
 	L.Push(res);
 	if (res)
@@ -3610,6 +3581,24 @@ static int tolua_cChunkDesc_GetBlockTypeMeta(lua_State * a_LuaState)
 	self->GetBlockTypeMeta(relX, relY, relZ, blockType, blockMeta);
 	L.Push(blockType, blockMeta);
 	return 2;
+}
+
+
+
+
+
+static int tolua_cColor_GetColor(lua_State * tolua_S)
+{
+	cLuaState L(tolua_S);
+
+	cColor * self;
+	if (!L.CheckParamSelf("cColor") || !L.GetStackValue(1, self))
+	{
+		return 0;
+	}
+
+	L.Push(self->GetRed(), self->GetGreen(), self->GetBlue());
+	return 3;
 }
 
 
@@ -4031,19 +4020,6 @@ void cManualBindings::Bind(lua_State * tolua_S)
 		tolua_function(tolua_S, "Base64Decode",          tolua_Base64Decode);
 		tolua_function(tolua_S, "md5",                   tolua_md5_obsolete);  // OBSOLETE, use cCryptoHash.md5() instead
 
-		tolua_beginmodule(tolua_S, "cBlockArea");
-			tolua_function(tolua_S, "GetBlockTypeMeta",        tolua_cBlockArea_GetBlockTypeMeta);
-			tolua_function(tolua_S, "GetCoordRange",           tolua_cBlockArea_GetCoordRange);
-			tolua_function(tolua_S, "GetOrigin",               tolua_cBlockArea_GetOrigin);
-			tolua_function(tolua_S, "GetNonAirCropRelCoords",  tolua_cBlockArea_GetNonAirCropRelCoords);
-			tolua_function(tolua_S, "GetRelBlockTypeMeta",     tolua_cBlockArea_GetRelBlockTypeMeta);
-			tolua_function(tolua_S, "GetSize",                 tolua_cBlockArea_GetSize);
-			tolua_function(tolua_S, "LoadFromSchematicFile",   tolua_cBlockArea_LoadFromSchematicFile);
-			tolua_function(tolua_S, "LoadFromSchematicString", tolua_cBlockArea_LoadFromSchematicString);
-			tolua_function(tolua_S, "SaveToSchematicFile",     tolua_cBlockArea_SaveToSchematicFile);
-			tolua_function(tolua_S, "SaveToSchematicString",   tolua_cBlockArea_SaveToSchematicString);
-		tolua_endmodule(tolua_S);
-
 		tolua_beginmodule(tolua_S, "cBoundingBox");
 			tolua_function(tolua_S, "CalcLineIntersection", tolua_cBoundingBox_CalcLineIntersection);
 			tolua_function(tolua_S, "Intersect",            tolua_cBoundingBox_Intersect);
@@ -4054,9 +4030,18 @@ void cManualBindings::Bind(lua_State * tolua_S)
 		tolua_endmodule(tolua_S);
 
 		tolua_beginmodule(tolua_S, "cClientHandle");
-			tolua_constant(tolua_S, "MAX_VIEW_DISTANCE", cClientHandle::MAX_VIEW_DISTANCE);
-			tolua_constant(tolua_S, "MIN_VIEW_DISTANCE", cClientHandle::MIN_VIEW_DISTANCE);
-			tolua_function(tolua_S, "SendPluginMessage", tolua_cClientHandle_SendPluginMessage);
+			tolua_constant(tolua_S, "MAX_VIEW_DISTANCE",   cClientHandle::MAX_VIEW_DISTANCE);
+			tolua_constant(tolua_S, "MIN_VIEW_DISTANCE",   cClientHandle::MIN_VIEW_DISTANCE);
+
+			tolua_function(tolua_S, "GetForgeMods", tolua_cClientHandle_GetForgeMods);
+			tolua_function(tolua_S, "SendPluginMessage",   tolua_cClientHandle_SendPluginMessage);
+			tolua_function(tolua_S, "GetUUID",             tolua_cClientHandle_GetUUID);
+			tolua_function(tolua_S, "GenerateOfflineUUID", tolua_cClientHandle_GenerateOfflineUUID);
+			tolua_function(tolua_S, "IsUUIDOnline",        tolua_cClientHandle_IsUUIDOnline);
+		tolua_endmodule(tolua_S);
+
+		tolua_beginmodule(tolua_S, "cColor");
+			tolua_function(tolua_S, "GetColor", tolua_cColor_GetColor);
 		tolua_endmodule(tolua_S);
 
 		tolua_beginmodule(tolua_S, "cCompositeChat");
@@ -4109,6 +4094,10 @@ void cManualBindings::Bind(lua_State * tolua_S)
 			tolua_function(tolua_S, "GetOutputBlockPos", tolua_cHopperEntity_GetOutputBlockPos);
 		tolua_endmodule(tolua_S);
 
+		tolua_beginmodule(tolua_S, "cItem");
+			tolua_variable(tolua_S, "m_LoreTable", tolua_get_cItem_m_LoreTable, tolua_set_cItem_m_LoreTable);
+		tolua_endmodule(tolua_S);
+
 		tolua_beginmodule(tolua_S, "cItemGrid");
 			tolua_function(tolua_S, "GetSlotCoords", Lua_ItemGrid_GetSlotCoords);
 		tolua_endmodule(tolua_S);
@@ -4127,12 +4116,18 @@ void cManualBindings::Bind(lua_State * tolua_S)
 			tolua_function(tolua_S, "new",              tolua_cLuaWindow_new);
 			tolua_function(tolua_S, "new_local",        tolua_cLuaWindow_new_local);
 			tolua_function(tolua_S, ".call",            tolua_cLuaWindow_new_local);
+			tolua_function(tolua_S, "SetOnClicked",     tolua_SetObjectCallback<cLuaWindow, &cLuaWindow::SetOnClicked>);
 			tolua_function(tolua_S, "SetOnClosing",     tolua_SetObjectCallback<cLuaWindow, &cLuaWindow::SetOnClosing>);
 			tolua_function(tolua_S, "SetOnSlotChanged", tolua_SetObjectCallback<cLuaWindow, &cLuaWindow::SetOnSlotChanged>);
 		tolua_endmodule(tolua_S);
 
 		tolua_beginmodule(tolua_S, "cMapManager");
 			tolua_function(tolua_S, "DoWithMap", DoWithID<cMapManager, cMap, &cMapManager::DoWithMap>);
+		tolua_endmodule(tolua_S);
+
+		tolua_beginmodule(tolua_S, "cMobHeadEntity");
+			tolua_function(tolua_S, "SetOwner",     tolua_cMobHeadEntity_SetOwner);
+			tolua_function(tolua_S, "GetOwnerUUID", tolua_cMobHeadEntity_GetOwnerUUID);
 		tolua_endmodule(tolua_S);
 
 		tolua_beginmodule(tolua_S, "cMojangAPI");
@@ -4148,6 +4143,7 @@ void cManualBindings::Bind(lua_State * tolua_S)
 			tolua_function(tolua_S, "GetPermissions",    tolua_cPlayer_GetPermissions);
 			tolua_function(tolua_S, "GetRestrictions",   tolua_cPlayer_GetRestrictions);
 			tolua_function(tolua_S, "PermissionMatches", tolua_cPlayer_PermissionMatches);
+			tolua_function(tolua_S, "GetUUID",           tolua_cPlayer_GetUUID);
 		tolua_endmodule(tolua_S);
 
 		tolua_beginmodule(tolua_S, "cPlugin");
@@ -4177,8 +4173,8 @@ void cManualBindings::Bind(lua_State * tolua_S)
 		tolua_endmodule(tolua_S);
 
 		tolua_beginmodule(tolua_S, "cRoot");
+			tolua_function(tolua_S, "DoWithPlayerByUUID",  tolua_cRoot_DoWithPlayerByUUID);
 			tolua_function(tolua_S, "FindAndDoWithPlayer", DoWith <cRoot, cPlayer, &cRoot::FindAndDoWithPlayer>);
-			tolua_function(tolua_S, "DoWithPlayerByUUID",  DoWith <cRoot, cPlayer, &cRoot::DoWithPlayerByUUID>);
 			tolua_function(tolua_S, "ForEachPlayer",       ForEach<cRoot, cPlayer, &cRoot::ForEachPlayer>);
 			tolua_function(tolua_S, "ForEachWorld",        ForEach<cRoot, cWorld,  &cRoot::ForEachWorld>);
 			tolua_function(tolua_S, "GetBrewingRecipe",    tolua_cRoot_GetBrewingRecipe);
@@ -4193,6 +4189,10 @@ void cManualBindings::Bind(lua_State * tolua_S)
 			tolua_function(tolua_S, "ForEachObjective", ForEach<cScoreboard, cObjective, &cScoreboard::ForEachObjective>);
 			tolua_function(tolua_S, "ForEachTeam",      ForEach<cScoreboard, cTeam,      &cScoreboard::ForEachTeam>);
 			tolua_function(tolua_S, "GetTeamNames",     tolua_cScoreboard_GetTeamNames);
+		tolua_endmodule(tolua_S);
+
+		tolua_beginmodule(tolua_S, "cServer");
+			tolua_function(tolua_S, "RegisterForgeMod",            tolua_cServer_RegisterForgeMod);
 		tolua_endmodule(tolua_S);
 
 		tolua_beginmodule(tolua_S, "cStringCompression");
@@ -4228,6 +4228,7 @@ void cManualBindings::Bind(lua_State * tolua_S)
 		BindNetwork(tolua_S);
 		BindRankManager(tolua_S);
 		BindWorld(tolua_S);
+		BindBlockArea(tolua_S);
 
 	tolua_endmodule(tolua_S);
 }

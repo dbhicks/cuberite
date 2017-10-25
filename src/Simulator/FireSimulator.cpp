@@ -3,7 +3,6 @@
 
 #include "FireSimulator.h"
 #include "../World.h"
-#include "../BlockID.h"
 #include "../Defines.h"
 #include "../Chunk.h"
 #include "Root.h"
@@ -145,6 +144,7 @@ void cFireSimulator::SimulateChunk(std::chrono::milliseconds a_Dt, int a_ChunkX,
 			a_Chunk->SetMeta(x, y, z, BlockMeta + 1);
 		}
 		itr->Data = GetBurnStepTime(a_Chunk, itr->x, itr->y, itr->z);  // TODO: Add some randomness into this
+		++itr;
 	}  // for itr - Data[]
 }
 
@@ -218,16 +218,16 @@ bool cFireSimulator::DoesBurnForever(BLOCKTYPE a_BlockType)
 
 
 
-void cFireSimulator::AddBlock(int a_BlockX, int a_BlockY, int a_BlockZ, cChunk * a_Chunk)
+void cFireSimulator::AddBlock(Vector3i a_Block, cChunk * a_Chunk)
 {
 	if ((a_Chunk == nullptr) || !a_Chunk->IsValid())
 	{
 		return;
 	}
 
-	int RelX = a_BlockX - a_Chunk->GetPosX() * cChunkDef::Width;
-	int RelZ = a_BlockZ - a_Chunk->GetPosZ() * cChunkDef::Width;
-	BLOCKTYPE BlockType = a_Chunk->GetBlock(RelX, a_BlockY, RelZ);
+	int RelX = a_Block.x - a_Chunk->GetPosX() * cChunkDef::Width;
+	int RelZ = a_Block.z - a_Chunk->GetPosZ() * cChunkDef::Width;
+	BLOCKTYPE BlockType = a_Chunk->GetBlock(RelX, a_Block.y, RelZ);
 	if (!IsAllowedBlock(BlockType))
 	{
 		return;
@@ -237,15 +237,15 @@ void cFireSimulator::AddBlock(int a_BlockX, int a_BlockY, int a_BlockZ, cChunk *
 	cFireSimulatorChunkData & ChunkData = a_Chunk->GetFireSimulatorData();
 	for (cCoordWithIntList::iterator itr = ChunkData.begin(), end = ChunkData.end(); itr != end; ++itr)
 	{
-		if ((itr->x == RelX) && (itr->y == a_BlockY) && (itr->z == RelZ))
+		if ((itr->x == RelX) && (itr->y == a_Block.y) && (itr->z == RelZ))
 		{
 			// Already present, skip adding
 			return;
 		}
 	}  // for itr - ChunkData[]
 
-	FLOG("FS: Adding block {%d, %d, %d}", a_BlockX, a_BlockY, a_BlockZ);
-	ChunkData.push_back(cCoordWithInt(RelX, a_BlockY, RelZ, 100));
+	FLOG("FS: Adding block {%d, %d, %d}", a_Block.x, a_Block.y, a_Block.z);
+	ChunkData.push_back(cCoordWithInt(RelX, a_Block.y, RelZ, 100));
 }
 
 
@@ -352,18 +352,18 @@ void cFireSimulator::TrySpreadFire(cChunk * a_Chunk, int a_RelX, int a_RelY, int
 
 void cFireSimulator::RemoveFuelNeighbors(cChunk * a_Chunk, int a_RelX, int a_RelY, int a_RelZ)
 {
-	for (size_t i = 0; i < ARRAYCOUNT(gNeighborCoords); i++)
+	for (auto & Coord : gNeighborCoords)
 	{
 		BLOCKTYPE  BlockType;
-		int X = a_RelX + gNeighborCoords[i].x;
-		int Z = a_RelZ + gNeighborCoords[i].z;
+		int X = a_RelX + Coord.x;
+		int Z = a_RelZ + Coord.z;
 
 		cChunkPtr Neighbour = a_Chunk->GetRelNeighborChunkAdjustCoords(X, Z);
 		if (Neighbour == nullptr)
 		{
 			continue;
 		}
-		BlockType = Neighbour->GetBlock(X, a_RelY + gNeighborCoords[i].y, Z);
+		BlockType = Neighbour->GetBlock(X, a_RelY + Coord.y, Z);
 
 		if (!IsFuel(BlockType))
 		{
@@ -371,12 +371,12 @@ void cFireSimulator::RemoveFuelNeighbors(cChunk * a_Chunk, int a_RelX, int a_Rel
 		}
 
 		int AbsX = (Neighbour->GetPosX() * cChunkDef::Width) + X;
-		int Y = a_RelY + gNeighborCoords[i].y;
+		int Y = a_RelY + Coord.y;
 		int AbsZ = (Neighbour->GetPosZ() * cChunkDef::Width) + Z;
 
 		if (BlockType == E_BLOCK_TNT)
 		{
-			m_World.SpawnPrimedTNT(AbsX, Y, AbsZ, 0);
+			m_World.SpawnPrimedTNT({static_cast<double>(AbsX), static_cast<double>(Y), static_cast<double>(AbsZ)}, 0);
 			Neighbour->SetBlock(X, Y, Z, E_BLOCK_AIR, 0);
 			return;
 		}

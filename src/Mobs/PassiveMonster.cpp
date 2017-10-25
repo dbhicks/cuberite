@@ -5,6 +5,7 @@
 #include "../World.h"
 #include "../Entities/Player.h"
 #include "BoundingBox.h"
+#include "../Items/ItemSpawnEgg.h"
 
 
 
@@ -108,23 +109,18 @@ void cPassiveMonster::Tick(std::chrono::milliseconds a_Dt, cChunk & a_Chunk)
 			Vector3f Pos = (GetPosition() + m_LovePartner->GetPosition()) * 0.5;
 			UInt32 BabyID = m_World->SpawnMob(Pos.x, Pos.y, Pos.z, GetMobType(), true);
 
-			class cBabyInheritCallback :
-				public cEntityCallback
-			{
-			public:
-				cPassiveMonster * Baby;
-				cBabyInheritCallback() : Baby(nullptr) { }
-				virtual bool Item(cEntity * a_Entity) override
+			cPassiveMonster * Baby = nullptr;
+
+			m_World->DoWithEntityByID(BabyID, [&](cEntity & a_Entity)
 				{
-					Baby = static_cast<cPassiveMonster *>(a_Entity);
+					Baby = static_cast<cPassiveMonster *>(&a_Entity);
 					return true;
 				}
-			} Callback;
+			);
 
-			m_World->DoWithEntityByID(BabyID, Callback);
-			if (Callback.Baby != nullptr)
+			if (Baby != nullptr)
 			{
-				Callback.Baby->InheritFromParents(this, m_LovePartner);
+				Baby->InheritFromParents(this, m_LovePartner);
 			}
 
 			m_World->SpawnExperienceOrb(Pos.x, Pos.y, Pos.z, GetRandomProvider().RandInt(1, 6));
@@ -158,49 +154,37 @@ void cPassiveMonster::Tick(std::chrono::milliseconds a_Dt, cChunk & a_Chunk)
 	{
 		if (m_LovePartner == nullptr)
 		{
-			class LookForLover : public cEntityCallback
-			{
-			public:
-				cEntity * m_Me;
-
-				LookForLover(cEntity * a_Me) :
-					m_Me(a_Me)
-				{
-				}
-
-				virtual bool Item(cEntity * a_Entity) override
+			m_World->ForEachEntityInBox(cBoundingBox(GetPosition(), 8, 8), [=](cEntity & a_Entity)
 				{
 					// If the entity is not a monster, don't breed with it
 					// Also, do not self-breed
-					if ((a_Entity->GetEntityType() != etMonster) || (a_Entity == m_Me))
+					if ((a_Entity.GetEntityType() != etMonster) || (&a_Entity == this))
 					{
 						return false;
 					}
 
-					cPassiveMonster * Me = static_cast<cPassiveMonster*>(m_Me);
-					cPassiveMonster * PotentialPartner = static_cast<cPassiveMonster*>(a_Entity);
+					auto & Me = static_cast<cPassiveMonster&>(*this);
+					auto & PotentialPartner = static_cast<cPassiveMonster&>(a_Entity);
 
 					// If the potential partner is not of the same species, don't breed with it
-					if (PotentialPartner->GetMobType() != Me->GetMobType())
+					if (PotentialPartner.GetMobType() != Me.GetMobType())
 					{
 						return false;
 					}
 
 					// If the potential partner is not in love
 					// Or they already have a mate, do not breed with them
-					if ((!PotentialPartner->IsInLove()) || (PotentialPartner->GetPartner() != nullptr))
+					if ((!PotentialPartner.IsInLove()) || (PotentialPartner.GetPartner() != nullptr))
 					{
 						return false;
 					}
 
 					// All conditions met, let's breed!
-					PotentialPartner->EngageLoveMode(Me);
-					Me->EngageLoveMode(PotentialPartner);
+					PotentialPartner.EngageLoveMode(&Me);
+					Me.EngageLoveMode(&PotentialPartner);
 					return true;
 				}
-			} Callback(this);
-
-			m_World->ForEachEntityInBox(cBoundingBox(GetPosition(), 8, 8), Callback);
+			);
 		}
 
 		m_LoveTimer--;
@@ -223,13 +207,14 @@ void cPassiveMonster::OnRightClicked(cPlayer & a_Player)
 {
 	super::OnRightClicked(a_Player);
 
+	const cItem & EquippedItem = a_Player.GetEquippedItem();
+
 	// If a player holding breeding items right-clicked me, go into love mode
 	if ((m_LoveCooldown == 0) && !IsInLove() && !IsBaby())
 	{
-		short HeldItem = a_Player.GetEquippedItem().m_ItemType;
 		cItems Items;
 		GetBreedingItems(Items);
-		if (Items.ContainsType(HeldItem))
+		if (Items.ContainsType(EquippedItem.m_ItemType))
 		{
 			if (!a_Player.IsGameModeCreative())
 			{
@@ -237,6 +222,22 @@ void cPassiveMonster::OnRightClicked(cPlayer & a_Player)
 			}
 			m_LoveTimer = 20 * 30;  // half a minute
 			m_World->BroadcastEntityStatus(*this, esMobInLove);
+		}
+	}
+	// If a player holding my spawn egg right-clicked me, spawn a new baby
+	if (EquippedItem.m_ItemType == E_ITEM_SPAWN_EGG)
+	{
+		eMonsterType MonsterType = cItemSpawnEggHandler::ItemDamageToMonsterType(EquippedItem.m_ItemDamage);
+		if (
+			(MonsterType == m_MobType) &&
+			(m_World->SpawnMob(GetPosX(), GetPosY(), GetPosZ(), m_MobType, true) != cEntity::INVALID_ID)  // Spawning succeeded
+		)
+		{
+			if (!a_Player.IsGameModeCreative())
+			{
+				// The mob was spawned, "use" the item:
+				a_Player.GetInventory().RemoveOneEquippedItem();
+			}
 		}
 	}
 }

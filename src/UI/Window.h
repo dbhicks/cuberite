@@ -9,6 +9,7 @@
 
 #pragma once
 
+#include "../FunctionRef.h"
 #include "../ItemGrid.h"
 
 
@@ -31,7 +32,8 @@ class cWorld;
 
 typedef std::list<cPlayer *> cPlayerList;
 typedef std::vector<cSlotArea *> cSlotAreas;
-
+using cPlayerListCallback   = cFunctionRef<bool(cPlayer       &)>;
+using cClientHandleCallback = cFunctionRef<bool(cClientHandle &)>;
 
 
 
@@ -113,7 +115,7 @@ public:
 	void GetSlots(cPlayer & a_Player, cItems & a_Slots) const;
 
 	/** Handles a click event from a player */
-	void Clicked(
+	virtual void Clicked(
 		cPlayer & a_Player, int a_WindowID,
 		short a_SlotNum, eClickAction a_ClickAction,
 		const cItem & a_ClickedItem
@@ -151,10 +153,10 @@ public:
 	void OwnerDestroyed(void);
 
 	/** Calls the callback safely for each player that has this window open; returns true if all players have been enumerated */
-	bool ForEachPlayer(cItemCallback<cPlayer> & a_Callback);
+	bool ForEachPlayer(cPlayerListCallback a_Callback);
 
 	/** Calls the callback safely for each client that has this window open; returns true if all clients have been enumerated */
-	bool ForEachClient(cItemCallback<cClientHandle> & a_Callback);
+	bool ForEachClient(cClientHandleCallback a_Callback);
 
 	/** Called on shift-clicking to distribute the stack into other areas; Modifies a_ItemStack as it is distributed!
 	if a_ShouldApply is true, the changes are written into the slots;
@@ -218,8 +220,12 @@ protected:
 	/** Processes the entire action stored in the internal structures for inventory painting; distributes one item into each slot */
 	void OnRightPaintEnd(cPlayer & a_Player);
 
-	/** Distributes a_NumToEachSlot items into the slots specified in a_SlotNums; returns the total number of items distributed */
-	int DistributeItemToSlots(cPlayer & a_Player, const cItem & a_Item, int a_NumToEachSlot, const cSlotNums & a_SlotNums);
+	/** Processes the entire action stored in the internal structures for inventory painting; distributes a full stack into each slot */
+	void OnMiddlePaintEnd(cPlayer & a_Player);
+
+	/** Distributes a_NumToEachSlot items into the slots specified in a_SlotNums; returns the total number of items distributed.
+	@param a_LimitItems if false, no checks are performed on a_Item.m_ItemCount. */
+	int DistributeItemToSlots(cPlayer & a_Player, const cItem & a_Item, int a_NumToEachSlot, const cSlotNums & a_SlotNums, bool a_LimitItems = true);
 } ;  // tolua_export
 
 

@@ -7,13 +7,14 @@
 #include "Globals.h"
 #include "BlockInfo.h"
 #include "Bindings.h"
+#include "DeadlockDetect.h"
+#include "UUID.h"
 #include "Bindings/DeprecatedBindings.h"
 #include "Bindings/LuaJson.h"
 #include "Bindings/ManualBindings.h"
 #include "BlockEntities/BlockEntity.h"
 #include "Blocks/BlockHandler.h"
 #include "Generating/ChunkDesc.h"
-#include "DeadlockDetect.h"
 
 
 
@@ -85,22 +86,32 @@ extern "C" int luaopen_lxp(lua_State * a_LuaState)
 
 
 
-cBlockInfo::~cBlockInfo()
+void cBlockInfo::sHandlerDeleter::operator () (cBlockHandler * a_Handler)
 {
+	delete a_Handler;
 }
 
 
 
 
 
-void cBlockInfo::Initialize(cBlockInfo::cBlockInfoArray & a_BlockInfos)
+cBlockInfo::cBlockInfoArray::cBlockInfoArray()
 {
+	cBlockInfoArray & BlockInfos = *this;
 	// The piece-loading code uses the handlers for rotations, so we need valid handlers
 	// Insert dummy handlers:
-	for (size_t i = 0; i < ARRAYCOUNT(a_BlockInfos); i++)
+	for (size_t i = 0; i < BlockInfos.size(); i++)
 	{
-		a_BlockInfos[i].m_Handler = new cBlockHandler(static_cast<BLOCKTYPE>(i));
+		BlockInfos[i].m_Handler.reset(new cBlockHandler(static_cast<BLOCKTYPE>(i)));
 	}
+}
+
+
+
+
+
+cBoundingBox::cBoundingBox(double, double, double, double, double, double)
+{
 }
 
 
@@ -115,8 +126,17 @@ cBlockHandler::cBlockHandler(BLOCKTYPE a_BlockType)
 
 
 
+cBoundingBox cBlockHandler::GetPlacementCollisionBox(BLOCKTYPE a_XM, BLOCKTYPE a_XP, BLOCKTYPE a_YM, BLOCKTYPE a_YP, BLOCKTYPE a_ZM, BLOCKTYPE a_ZP)
+{
+	return cBoundingBox(0, 0, 0, 0, 0, 0);
+}
+
+
+
+
+
 bool cBlockHandler::GetPlacementBlockTypeMeta(
-	cChunkInterface & a_ChunkInterface, cPlayer * a_Player,
+	cChunkInterface & a_ChunkInterface, cPlayer & a_Player,
 	int a_BlockX, int a_BlockY, int a_BlockZ, eBlockFace a_BlockFace,
 	int a_CursorX, int a_CursorY, int a_CursorZ,
 	BLOCKTYPE & a_BlockType, NIBBLETYPE & a_BlockMeta
@@ -137,7 +157,7 @@ void cBlockHandler::OnUpdate(cChunkInterface & cChunkInterface, cWorldInterface 
 
 
 
-void cBlockHandler::OnPlacedByPlayer(cChunkInterface & a_ChunkInterface, cWorldInterface & a_WorldInterface, cPlayer * a_Player, const sSetBlock & a_BlockChange)
+void cBlockHandler::OnPlacedByPlayer(cChunkInterface & a_ChunkInterface, cWorldInterface & a_WorldInterface, cPlayer & a_Player, const sSetBlock & a_BlockChange)
 {
 }
 
@@ -145,7 +165,7 @@ void cBlockHandler::OnPlacedByPlayer(cChunkInterface & a_ChunkInterface, cWorldI
 
 
 
-void cBlockHandler::OnDestroyedByPlayer(cChunkInterface & a_ChunkInterface, cWorldInterface & a_WorldInterface, cPlayer * a_Player, int a_BlockX, int a_BlockY, int a_BlockZ)
+void cBlockHandler::OnDestroyedByPlayer(cChunkInterface & a_ChunkInterface, cWorldInterface & a_WorldInterface, cPlayer & a_Player, int a_BlockX, int a_BlockY, int a_BlockZ)
 {
 }
 
@@ -220,7 +240,7 @@ bool cBlockHandler::IsClickedThrough(void)
 
 
 
-bool cBlockHandler::DoesIgnoreBuildCollision(void)
+bool cBlockHandler::DoesIgnoreBuildCollision(cChunkInterface & a_ChunkInterface, Vector3i a_Pos, cPlayer & a_Player, NIBBLETYPE a_Meta)
 {
 	return (m_BlockType == E_BLOCK_AIR);
 }
@@ -283,6 +303,50 @@ void cDeadlockDetect::TrackCriticalSection(cCriticalSection & a_CS, const AStrin
 
 void cDeadlockDetect::UntrackCriticalSection(cCriticalSection & a_CS)
 {
+}
+
+
+
+
+
+void cBlockEntity::SetPos(int a_BlockX, int a_BlockY, int a_BlockZ)
+{
+}
+
+
+
+
+
+bool cBlockEntity::IsBlockEntityBlockType(BLOCKTYPE a_BlockType)
+{
+	return false;
+}
+
+
+
+
+
+cBlockEntity * cBlockEntity::Clone(int a_BlockX, int a_BlockY, int a_BlockZ)
+{
+	return nullptr;
+}
+
+
+
+
+
+bool cLuaState::GetStackValue(int, cUUID *&)
+{
+	return false;
+}
+
+
+
+
+
+bool cUUID::FromString(const AString &)
+{
+	return true;
 }
 
 

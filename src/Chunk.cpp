@@ -13,6 +13,7 @@
 #include "zlib/zlib.h"
 #include "Defines.h"
 #include "BlockEntities/BeaconEntity.h"
+#include "BlockEntities/BedEntity.h"
 #include "BlockEntities/BrewingstandEntity.h"
 #include "BlockEntities/ChestEntity.h"
 #include "BlockEntities/CommandBlockEntity.h"
@@ -135,13 +136,12 @@ cChunk::~cChunk()
 	// Remove and destroy all entities that are not players:
 	cEntityList Entities;
 	std::swap(Entities, m_Entities);  // Need another list because cEntity destructors check if they've been removed from chunk
-	for (auto Entity : Entities)
+	for (auto & Entity : Entities)
 	{
 		if (!Entity->IsPlayer())
 		{
 			// Scheduling a normal destruction is neither possible (Since this chunk will be gone till the schedule occurs) nor necessary.
 			Entity->DestroyNoScheduling(false);  // No point in broadcasting in an unloading chunk. Chunks unload when no one is nearby.
-			delete Entity;
 		}
 	}
 
@@ -299,9 +299,9 @@ void cChunk::GetAllData(cChunkDataCallback & a_Callback)
 
 	a_Callback.ChunkData(m_ChunkData);
 
-	for (auto Entity : m_Entities)
+	for (const auto & Entity : m_Entities)
 	{
-		a_Callback.Entity(Entity);
+		a_Callback.Entity(Entity.get());
 	}
 
 	for (auto & KeyPair : m_BlockEntities)
@@ -408,7 +408,7 @@ void cChunk::WriteBlockArea(cBlockArea & a_Area, int a_MinBlockX, int a_MinBlock
 {
 	if ((a_DataTypes & (cBlockArea::baTypes | cBlockArea::baMetas)) != (cBlockArea::baTypes | cBlockArea::baMetas))
 	{
-		LOGWARNING("cChunk::WriteBlockArea(): unsupported datatype request, can write only types + metas (0x%x), requested 0x%x. Ignoring.",
+		LOGWARNING("cChunk::WriteBlockArea(): unsupported datatype request, can write only types + metas together (0x%x), requested 0x%x. Ignoring.",
 			(cBlockArea::baTypes | cBlockArea::baMetas), a_DataTypes & (cBlockArea::baTypes | cBlockArea::baMetas)
 		);
 		return;
@@ -420,16 +420,15 @@ void cChunk::WriteBlockArea(cBlockArea & a_Area, int a_MinBlockX, int a_MinBlock
 	int BlockEndX   = std::min(a_MinBlockX + a_Area.GetSizeX(), (m_PosX + 1) * cChunkDef::Width);
 	int BlockStartZ = std::max(a_MinBlockZ, m_PosZ * cChunkDef::Width);
 	int BlockEndZ   = std::min(a_MinBlockZ + a_Area.GetSizeZ(), (m_PosZ + 1) * cChunkDef::Width);
-	int SizeX = BlockEndX - BlockStartX;
+	int SizeX = BlockEndX - BlockStartX;  // Size of the union
 	int SizeZ = BlockEndZ - BlockStartZ;
-	int OffX = BlockStartX - m_PosX * cChunkDef::Width;
-	int OffZ = BlockStartZ - m_PosZ * cChunkDef::Width;
-	int BaseX = BlockStartX - a_MinBlockX;
-	int BaseZ = BlockStartZ - a_MinBlockZ;
 	int SizeY = std::min(a_Area.GetSizeY(), cChunkDef::Height - a_MinBlockY);
+	int OffX = BlockStartX - m_PosX * cChunkDef::Width;  // Offset within the chunk where the union starts
+	int OffZ = BlockStartZ - m_PosZ * cChunkDef::Width;
+	int BaseX = BlockStartX - a_MinBlockX;  // Offset within the area where the union starts
+	int BaseZ = BlockStartZ - a_MinBlockZ;
 
-	// TODO: Improve this by not calling FastSetBlock() and doing the processing here
-	// so that the heightmap is touched only once for each column.
+	// Copy blocktype and blockmeta:
 	BLOCKTYPE *  AreaBlockTypes = a_Area.GetBlockTypes();
 	NIBBLETYPE * AreaBlockMetas = a_Area.GetBlockMetas();
 	for (int y = 0; y < SizeY; y++)
@@ -444,13 +443,61 @@ void cChunk::WriteBlockArea(cBlockArea & a_Area, int a_MinBlockX, int a_MinBlock
 			{
 				int ChunkX = OffX + x;
 				int AreaX = BaseX + x;
-				int idx = a_Area.MakeIndex(AreaX, AreaY, AreaZ);
+				auto idx = a_Area.MakeIndex(AreaX, AreaY, AreaZ);
 				BLOCKTYPE BlockType = AreaBlockTypes[idx];
 				NIBBLETYPE BlockMeta = AreaBlockMetas[idx];
 				FastSetBlock(ChunkX, ChunkY, ChunkZ, BlockType, BlockMeta);
 			}  // for x
 		}  // for z
 	}  // for y
+
+	// Erase all affected block entities:
+	cCuboid affectedArea(  // In world coordinates
+		{BlockStartX, a_MinBlockY, BlockStartZ},
+		{BlockEndX, a_MinBlockY + SizeY - 1, BlockEndZ}
+	);
+	for (auto itr = m_BlockEntities.begin(); itr != m_BlockEntities.end();)
+	{
+		if (affectedArea.IsInside(itr->second->GetPos()))
+		{
+			delete itr->second;
+			itr = m_BlockEntities.erase(itr);
+		}
+		else
+		{
+			++itr;
+		}
+	}
+
+	// Clone block entities from a_Area into this chunk:
+	if ((a_DataTypes & cBlockArea::baBlockEntities) != 0)
+	{
+		for (const auto & keyPair: a_Area.GetBlockEntities())
+		{
+			auto & be = keyPair.second;
+			auto posX = be->GetPosX() + a_MinBlockX;
+			auto posY = be->GetPosY() + a_MinBlockY;
+			auto posZ = be->GetPosZ() + a_MinBlockZ;
+			if (
+				(posX < m_PosX * cChunkDef::Width) || (posX >= m_PosX * cChunkDef::Width + cChunkDef::Width) ||
+				(posZ < m_PosZ * cChunkDef::Width) || (posZ >= m_PosZ * cChunkDef::Width + cChunkDef::Width)
+			)
+			{
+				continue;
+			}
+			// This block entity is inside the chunk, clone it (and remove any that is there currently):
+			auto idx = MakeIndex(posX - m_PosX * cChunkDef::Width, posY, posZ - m_PosZ * cChunkDef::Width);
+			auto itr = m_BlockEntities.find(idx);
+			if (itr != m_BlockEntities.end())
+			{
+				m_BlockEntities.erase(itr);
+			}
+			auto clone = be->Clone(posX, posY, posZ);
+			clone->SetWorld(m_World);
+			AddBlockEntityClean(clone);
+			BroadcastBlockEntity({posX, posY, posZ});
+		}
+	}
 }
 
 
@@ -487,7 +534,7 @@ void cChunk::CollectMobCensus(cMobCensus & toFill)
 	}
 
 	Vector3d currentPosition;
-	for (auto entity : m_Entities)
+	for (auto & entity : m_Entities)
 	{
 		// LOGD("Counting entity #%i (%s)", (*itr)->GetUniqueID(), (*itr)->GetClass());
 		if (entity->IsMob())
@@ -590,7 +637,7 @@ void cChunk::SpawnMobs(cMobSpawner & a_MobSpawner)
 			continue;
 		}
 
-		cEntity * newMob = a_MobSpawner.TryToSpawnHere(this, TryX, TryY, TryZ, Biome, MaxNbOfSuccess);
+		auto newMob = a_MobSpawner.TryToSpawnHere(this, TryX, TryY, TryZ, Biome, MaxNbOfSuccess);
 		if (newMob == nullptr)
 		{
 			continue;
@@ -614,7 +661,7 @@ void cChunk::Tick(std::chrono::milliseconds a_Dt)
 	// If we are not valid, tick players and bailout
 	if (!IsValid())
 	{
-		for (auto Entity : m_Entities)
+		for (const auto & Entity : m_Entities)
 		{
 			if (Entity->IsPlayer())
 			{
@@ -639,7 +686,7 @@ void cChunk::Tick(std::chrono::milliseconds a_Dt)
 		m_IsDirty = KeyPair.second->Tick(a_Dt, *this) | m_IsDirty;
 	}
 
-	for (cEntityList::iterator itr = m_Entities.begin(); itr != m_Entities.end();)
+	for (auto itr = m_Entities.begin(); itr != m_Entities.end();)
 	{
 		// Do not tick mobs that are detached from the world. They're either scheduled for teleportation or for removal.
 		if (!(*itr)->IsTicking())
@@ -664,20 +711,22 @@ void cChunk::Tick(std::chrono::milliseconds a_Dt)
 			continue;
 		}
 
-		if ((((*itr)->GetChunkX() != m_PosX) ||
-			((*itr)->GetChunkZ() != m_PosZ))
+		if (
+			((*itr)->GetChunkX() != m_PosX) ||
+			((*itr)->GetChunkZ() != m_PosZ)
 		)
 		{
-			// This block is very similar to RemoveEntity, except it uses an iterator to avoid scanning the whole m_Entities
-			// The entity moved out of the chunk, move it to the neighbor
-
-			(*itr)->SetParentChunk(nullptr);
-			MoveEntityToNewChunk(*itr);
 			// Mark as dirty if it was a server-generated entity:
 			if (!(*itr)->IsPlayer())
 			{
 				MarkDirty();
 			}
+
+			// This block is very similar to RemoveEntity, except it uses an iterator to avoid scanning the whole m_Entities
+			// The entity moved out of the chunk, move it to the neighbor
+			(*itr)->SetParentChunk(nullptr);
+			MoveEntityToNewChunk(std::move(*itr));
+
 			itr = m_Entities.erase(itr);
 		}
 		else
@@ -706,7 +755,7 @@ void cChunk::TickBlock(int a_RelX, int a_RelY, int a_RelZ)
 
 
 
-void cChunk::MoveEntityToNewChunk(cEntity * a_Entity)
+void cChunk::MoveEntityToNewChunk(OwnedEntity a_Entity)
 {
 	cChunk * Neighbor = GetNeighborChunk(a_Entity->GetChunkX() * cChunkDef::Width, a_Entity->GetChunkZ() * cChunkDef::Width);
 	if (Neighbor == nullptr)
@@ -720,28 +769,29 @@ void cChunk::MoveEntityToNewChunk(cEntity * a_Entity)
 	}
 
 	ASSERT(Neighbor != this);  // Moving into the same chunk? wtf?
-	Neighbor->AddEntity(a_Entity);
+	auto & Entity = *a_Entity;
+	Neighbor->AddEntity(std::move(a_Entity));
 
 	class cMover :
 		public cClientDiffCallback
 	{
 		virtual void Removed(cClientHandle * a_Client) override
 		{
-			a_Client->SendDestroyEntity(*m_Entity);
+			a_Client->SendDestroyEntity(m_Entity);
 		}
 
 		virtual void Added(cClientHandle * a_Client) override
 		{
-			m_Entity->SpawnOn(*a_Client);
+			m_Entity.SpawnOn(*a_Client);
 		}
 
-		cEntity * m_Entity;
+		cEntity & m_Entity;
 
 	public:
-		cMover(cEntity * a_CallbackEntity) :
+		cMover(cEntity & a_CallbackEntity) :
 			m_Entity(a_CallbackEntity)
 		{}
-	} Mover(a_Entity);
+	} Mover(Entity);
 
 	m_ChunkMap->CompareChunkClients(this, Neighbor, Mover);
 }
@@ -867,11 +917,17 @@ void cChunk::ApplyWeatherToTop()
 	int X = m_World->GetTickRandomNumber(15);
 	int Z = m_World->GetTickRandomNumber(15);
 
-	// TODO: Check light levels, don't snow over when the BlockLight is higher than (7?)
 	int Height = GetHeight(X, Z);
 
 	if (GetSnowStartHeight(GetBiomeAt(X, Z)) > Height)
 	{
+		return;
+	}
+
+	if (GetBlockLight(X, Height, Z) > 10)
+	{
+		// Snow only generates on blocks with a block light level of 10 or less.
+		// Ref: https://minecraft.gamepedia.com/Snow_(layer)#Snowfall
 		return;
 	}
 
@@ -1074,7 +1130,7 @@ int cChunk::GrowSugarcane(int a_RelX, int a_RelY, int a_RelZ, int a_NumBlocks)
 
 int cChunk::GrowCactus(int a_RelX, int a_RelY, int a_RelZ, int a_NumBlocks)
 {
-	// Check the total height of the sugarcane blocks here:
+	// Check the total height of the cacti blocks here:
 	int Top = a_RelY + 1;
 	while (
 		(Top < cChunkDef::Height) &&
@@ -1097,11 +1153,38 @@ int cChunk::GrowCactus(int a_RelX, int a_RelY, int a_RelZ, int a_NumBlocks)
 	for (int i = 0; i < ToGrow; i++)
 	{
 		BLOCKTYPE  BlockType;
-		NIBBLETYPE BlockMeta;
-		if (UnboundedRelGetBlock(a_RelX, Top + i, a_RelZ, BlockType, BlockMeta) && (BlockType == E_BLOCK_AIR))
+		if (UnboundedRelGetBlockType(a_RelX, Top + i, a_RelZ, BlockType) && (BlockType == E_BLOCK_AIR))
 		{
-			// TODO: Check the surrounding blocks, if they aren't air, break the cactus block into pickups (and continue breaking blocks above in the next loop iterations)
 			UnboundedRelFastSetBlock(a_RelX, Top + i, a_RelZ, E_BLOCK_CACTUS, 0);
+
+			// Check surroundings. Cacti may ONLY be surrounded by non-solid blocks
+			static const struct
+			{
+				int x, z;
+			} Coords[] =
+			{
+				{-1,  0},
+				{ 1,  0},
+				{ 0, -1},
+				{ 0,  1},
+			} ;
+			for (auto & Coord : Coords)
+			{
+				if (
+					UnboundedRelGetBlockType(a_RelX + Coord.x, Top + 1, a_RelZ + Coord.z, BlockType) &&
+					(
+						cBlockInfo::IsSolid(BlockType) ||
+						(BlockType == E_BLOCK_LAVA) ||
+						(BlockType == E_BLOCK_STATIONARY_LAVA)
+					)
+				)
+				{
+					return false;
+				}
+			}  // for i - Coords[]
+			{
+				GetWorld()->DigBlock(a_RelX + GetPosX() * cChunkDef::Width, Top + i, a_RelZ + GetPosZ() * cChunkDef::Width);
+			}
 		}
 		else
 		{
@@ -1139,7 +1222,7 @@ bool cChunk::GrowTallGrass(int a_RelX, int a_RelY, int a_RelZ)
 		default:                      return false;
 	}
 	return UnboundedRelFastSetBlock(a_RelX, a_RelY, a_RelZ, E_BLOCK_BIG_FLOWER, LargeFlowerMeta) &&
-		UnboundedRelFastSetBlock(a_RelX, a_RelY + 1, a_RelZ, E_BLOCK_BIG_FLOWER, 0x8 | LargeFlowerMeta);
+		UnboundedRelFastSetBlock(a_RelX, a_RelY + 1, a_RelZ, E_BLOCK_BIG_FLOWER, E_META_BIG_FLOWER_TOP);
 }
 
 
@@ -1360,6 +1443,7 @@ void cChunk::CreateBlockEntities(void)
 				switch (BlockType)
 				{
 					case E_BLOCK_BEACON:
+					case E_BLOCK_BED:
 					case E_BLOCK_TRAPPED_CHEST:
 					case E_BLOCK_CHEST:
 					case E_BLOCK_COMMAND_BLOCK:
@@ -1417,7 +1501,7 @@ void cChunk::WakeUpSimulators(void)
 				// The redstone sim takes multiple blocks, use the inbuilt checker
 				if (RedstoneSimulator->IsAllowedBlock(Block))
 				{
-					RedstoneSimulator->AddBlock(BlockX, y, BlockZ, this);
+					RedstoneSimulator->AddBlock({BlockX, y, BlockZ}, this);
 					continue;
 				}
 
@@ -1425,12 +1509,12 @@ void cChunk::WakeUpSimulators(void)
 				{
 					case E_BLOCK_WATER:
 					{
-						WaterSimulator->AddBlock(BlockX, y, BlockZ, this);
+						WaterSimulator->AddBlock({BlockX, y, BlockZ}, this);
 						break;
 					}
 					case E_BLOCK_LAVA:
 					{
-						LavaSimulator->AddBlock(BlockX, y, BlockZ, this);
+						LavaSimulator->AddBlock({BlockX, y, BlockZ}, this);
 						break;
 					}
 					default:
@@ -1493,6 +1577,7 @@ void cChunk::SetBlock(int a_RelX, int a_RelY, int a_RelZ, BLOCKTYPE a_BlockType,
 	switch (a_BlockType)
 	{
 		case E_BLOCK_BEACON:
+		case E_BLOCK_BED:
 		case E_BLOCK_TRAPPED_CHEST:
 		case E_BLOCK_CHEST:
 		case E_BLOCK_COMMAND_BLOCK:
@@ -1697,16 +1782,20 @@ void cChunk::AddBlockEntityClean(cBlockEntity * a_BlockEntity)
 
 cBlockEntity * cChunk::GetBlockEntity(int a_BlockX, int a_BlockY, int a_BlockZ)
 {
-	// Check that the query coords are within chunk bounds:
-	ASSERT(a_BlockX >= m_PosX * cChunkDef::Width);
-	ASSERT(a_BlockX < m_PosX * cChunkDef::Width + cChunkDef::Width);
-	ASSERT(a_BlockZ >= m_PosZ * cChunkDef::Width);
-	ASSERT(a_BlockZ < m_PosZ * cChunkDef::Width + cChunkDef::Width);
-
 	int RelX = a_BlockX - m_PosX * cChunkDef::Width;
 	int RelZ = a_BlockZ - m_PosZ * cChunkDef::Width;
 
-	auto itr = m_BlockEntities.find(MakeIndex(RelX, a_BlockY, RelZ));
+	if (
+		!IsValidWidth (RelX)     ||
+		!IsValidHeight(a_BlockY) ||
+		!IsValidWidth (RelZ)
+	)
+	{
+		// Coordinates are outside outside the world, no block entities here
+		return nullptr;
+	}
+
+	auto itr = m_BlockEntities.find(MakeIndexNoCheck(RelX, a_BlockY, RelZ));
 	return (itr == m_BlockEntities.end()) ? nullptr : itr->second;
 }
 
@@ -1793,15 +1882,15 @@ void cChunk::CollectPickupsByPlayer(cPlayer & a_Player)
 	double PosY = a_Player.GetPosY();
 	double PosZ = a_Player.GetPosZ();
 
-	for (cEntityList::iterator itr = m_Entities.begin(); itr != m_Entities.end(); ++itr)
+	for (auto & Entity : m_Entities)
 	{
-		if ((!(*itr)->IsPickup()) && (!(*itr)->IsProjectile()))
+		if ((!Entity->IsPickup()) && (!Entity->IsProjectile()))
 		{
 			continue;  // Only pickups and projectiles can be picked up
 		}
-		float DiffX = static_cast<float>((*itr)->GetPosX() - PosX);
-		float DiffY = static_cast<float>((*itr)->GetPosY() - PosY);
-		float DiffZ = static_cast<float>((*itr)->GetPosZ() - PosZ);
+		float DiffX = static_cast<float>(Entity->GetPosX() - PosX);
+		float DiffY = static_cast<float>(Entity->GetPosY() - PosY);
+		float DiffZ = static_cast<float>(Entity->GetPosZ() - PosZ);
 		float SqrDist = DiffX * DiffX + DiffY * DiffY + DiffZ * DiffZ;
 		if (SqrDist < 1.5f * 1.5f)  // 1.5 block
 		{
@@ -1811,13 +1900,13 @@ void cChunk::CollectPickupsByPlayer(cPlayer & a_Player)
 			);
 			*/
 			MarkDirty();
-			if ((*itr)->IsPickup())
+			if (Entity->IsPickup())
 			{
-				(reinterpret_cast<cPickup *>(*itr))->CollectedBy(a_Player);
+				reinterpret_cast<cPickup *>(Entity.get())->CollectedBy(a_Player);
 			}
 			else
 			{
-				(reinterpret_cast<cProjectileEntity *>(*itr))->CollectedBy(a_Player);
+				reinterpret_cast<cProjectileEntity *>(Entity.get())->CollectedBy(a_Player);
 			}
 		}
 		else if (SqrDist < 5 * 5)
@@ -1854,7 +1943,7 @@ bool cChunk::SetSignLines(int a_PosX, int a_PosY, int a_PosZ, const AString & a_
 	MarkDirty();
 	auto Sign = static_cast<cSignEntity *>(Entity);
 	Sign->SetLines(a_Line1, a_Line2, a_Line3, a_Line4);
-	m_World->BroadcastBlockEntity(a_PosX, a_PosY, a_PosZ);
+	m_World->BroadcastBlockEntity({a_PosX, a_PosY, a_PosZ});
 	return true;
 }
 
@@ -1913,7 +2002,7 @@ void cChunk::RemoveClient(cClientHandle * a_Client)
 
 	if (!a_Client->IsDestroyed())
 	{
-		for (auto Entity : m_Entities)
+		for (auto & Entity : m_Entities)
 		{
 			/*
 			// DEBUG:
@@ -1951,34 +2040,59 @@ bool cChunk::HasAnyClients(void) const
 
 
 
-void cChunk::AddEntity(cEntity * a_Entity)
+void cChunk::AddEntity(OwnedEntity a_Entity)
 {
 	if (!a_Entity->IsPlayer())
 	{
 		MarkDirty();
 	}
 
-	ASSERT(std::find(m_Entities.begin(), m_Entities.end(), a_Entity) == m_Entities.end());  // Not there already
+	auto EntityPtr = a_Entity.get();
 
-	m_Entities.push_back(a_Entity);
-	ASSERT(a_Entity->GetParentChunk() == nullptr);
-	a_Entity->SetParentChunk(this);
+	ASSERT(std::find(m_Entities.begin(), m_Entities.end(), a_Entity) == m_Entities.end());  // Not there already
+	m_Entities.emplace_back(std::move(a_Entity));
+
+	ASSERT(EntityPtr->GetParentChunk() == nullptr);
+	EntityPtr->SetParentChunk(this);
 }
 
 
 
 
 
-void cChunk::RemoveEntity(cEntity * a_Entity)
+OwnedEntity cChunk::RemoveEntity(cEntity & a_Entity)
 {
-	ASSERT(a_Entity->GetParentChunk() == this);
-	a_Entity->SetParentChunk(nullptr);
-	m_Entities.remove(a_Entity);
+	ASSERT(a_Entity.GetParentChunk() == this);
+	ASSERT(!a_Entity.IsTicking());
+	a_Entity.SetParentChunk(nullptr);
+
 	// Mark as dirty if it was a server-generated entity:
-	if (!a_Entity->IsPlayer())
+	if (!a_Entity.IsPlayer())
 	{
 		MarkDirty();
 	}
+
+	OwnedEntity Removed;
+	m_Entities.erase(
+		std::remove_if(
+			m_Entities.begin(),
+			m_Entities.end(),
+			[&a_Entity, &Removed](decltype(m_Entities)::value_type & a_Value)
+			{
+				if (a_Value.get() == &a_Entity)
+				{
+					ASSERT(!Removed);
+					Removed = std::move(a_Value);
+					return true;
+				}
+
+				return false;
+			}
+		),
+		m_Entities.end()
+	);
+
+	return Removed;
 }
 
 
@@ -1987,13 +2101,13 @@ void cChunk::RemoveEntity(cEntity * a_Entity)
 
 bool cChunk::HasEntity(UInt32 a_EntityID)
 {
-	for (cEntityList::const_iterator itr = m_Entities.begin(), end = m_Entities.end(); itr != end; ++itr)
+	for (const auto & Entity : m_Entities)
 	{
-		if ((*itr)->GetUniqueID() == a_EntityID)
+		if (Entity->GetUniqueID() == a_EntityID)
 		{
 			return true;
 		}
-	}  // for itr - m_Entities[]
+	}
 	return false;
 }
 
@@ -2001,17 +2115,12 @@ bool cChunk::HasEntity(UInt32 a_EntityID)
 
 
 
-bool cChunk::ForEachEntity(cEntityCallback & a_Callback)
+bool cChunk::ForEachEntity(cEntityCallback a_Callback)
 {
 	// The entity list is locked by the parent chunkmap's CS
-	for (cEntityList::iterator itr = m_Entities.begin(), itr2 = itr; itr != m_Entities.end(); itr = itr2)
+	for (const auto & Entity : m_Entities)
 	{
-		++itr2;
-		if (!(*itr)->IsTicking())
-		{
-			continue;
-		}
-		if (a_Callback.Item(*itr))
+		if (Entity->IsTicking() && a_Callback(*Entity))
 		{
 			return false;
 		}
@@ -2023,23 +2132,22 @@ bool cChunk::ForEachEntity(cEntityCallback & a_Callback)
 
 
 
-bool cChunk::ForEachEntityInBox(const cBoundingBox & a_Box, cEntityCallback & a_Callback)
+bool cChunk::ForEachEntityInBox(const cBoundingBox & a_Box, cEntityCallback a_Callback)
 {
 	// The entity list is locked by the parent chunkmap's CS
-	for (cEntityList::iterator itr = m_Entities.begin(), itr2 = itr; itr != m_Entities.end(); itr = itr2)
+	for (const auto & Entity : m_Entities)
 	{
-		++itr2;
-		if (!(*itr)->IsTicking())
+		if (!Entity->IsTicking())
 		{
 			continue;
 		}
-		cBoundingBox EntBox((*itr)->GetPosition(), (*itr)->GetWidth() / 2, (*itr)->GetHeight());
+		cBoundingBox EntBox(Entity->GetPosition(), Entity->GetWidth() / 2, Entity->GetHeight());
 		if (!EntBox.DoesIntersect(a_Box))
 		{
 			// The entity is not in the specified box
 			continue;
 		}
-		if (a_Callback.Item(*itr))
+		if (a_Callback(*Entity))
 		{
 			return false;
 		}
@@ -2051,23 +2159,14 @@ bool cChunk::ForEachEntityInBox(const cBoundingBox & a_Box, cEntityCallback & a_
 
 
 
-bool cChunk::DoWithEntityByID(UInt32 a_EntityID, cEntityCallback & a_Callback, bool & a_CallbackResult)
-{
-	return DoWithEntityByID(a_EntityID, std::bind(&cEntityCallback::Item, &a_Callback, std::placeholders::_1), a_CallbackResult);
-}
-
-
-
-
-
-bool cChunk::DoWithEntityByID(UInt32 a_EntityID, cLambdaEntityCallback a_Callback, bool & a_CallbackResult)
+bool cChunk::DoWithEntityByID(UInt32 a_EntityID, cEntityCallback a_Callback, bool & a_CallbackResult)
 {
 	// The entity list is locked by the parent chunkmap's CS
-	for (cEntityList::iterator itr = m_Entities.begin(), end = m_Entities.end(); itr != end; ++itr)
+	for (const auto & Entity : m_Entities)
 	{
-		if (((*itr)->GetUniqueID() == a_EntityID) && ((*itr)->IsTicking()))
+		if ((Entity->GetUniqueID() == a_EntityID) && (Entity->IsTicking()))
 		{
-			a_CallbackResult = a_Callback(*itr);
+			a_CallbackResult = a_Callback(*Entity);
 			return true;
 		}
 	}  // for itr - m_Entitites[]
@@ -2079,7 +2178,7 @@ bool cChunk::DoWithEntityByID(UInt32 a_EntityID, cLambdaEntityCallback a_Callbac
 
 
 template <class tyEntity, BLOCKTYPE... tBlocktype>
-bool cChunk::GenericForEachBlockEntity(cItemCallback<tyEntity>& a_Callback)
+bool cChunk::GenericForEachBlockEntity(cFunctionRef<bool(tyEntity &)> a_Callback)
 {
 	// The blockentity list is locked by the parent chunkmap's CS
 	for (auto & KeyPair : m_BlockEntities)
@@ -2090,7 +2189,7 @@ bool cChunk::GenericForEachBlockEntity(cItemCallback<tyEntity>& a_Callback)
 			(IsOneOf<tBlocktype...>(Block->GetBlockType()))
 		)
 		{
-			if (a_Callback.Item(static_cast<tyEntity *>(Block)))
+			if (a_Callback(*static_cast<tyEntity *>(Block)))
 			{
 				return false;
 			}
@@ -2103,7 +2202,7 @@ bool cChunk::GenericForEachBlockEntity(cItemCallback<tyEntity>& a_Callback)
 
 
 
-bool cChunk::ForEachBlockEntity(cBlockEntityCallback & a_Callback)
+bool cChunk::ForEachBlockEntity(cBlockEntityCallback a_Callback)
 {
 	return GenericForEachBlockEntity<cBlockEntity>(a_Callback);
 }
@@ -2112,7 +2211,7 @@ bool cChunk::ForEachBlockEntity(cBlockEntityCallback & a_Callback)
 
 
 
-bool cChunk::ForEachBrewingstand(cBrewingstandCallback & a_Callback)
+bool cChunk::ForEachBrewingstand(cBrewingstandCallback a_Callback)
 {
 	return GenericForEachBlockEntity<cBrewingstandEntity,
 		E_BLOCK_BREWING_STAND
@@ -2123,7 +2222,7 @@ bool cChunk::ForEachBrewingstand(cBrewingstandCallback & a_Callback)
 
 
 
-bool cChunk::ForEachChest(cChestCallback & a_Callback)
+bool cChunk::ForEachChest(cChestCallback a_Callback)
 {
 	return GenericForEachBlockEntity<cChestEntity,
 		E_BLOCK_CHEST
@@ -2134,7 +2233,7 @@ bool cChunk::ForEachChest(cChestCallback & a_Callback)
 
 
 
-bool cChunk::ForEachDispenser(cDispenserCallback & a_Callback)
+bool cChunk::ForEachDispenser(cDispenserCallback a_Callback)
 {
 	return GenericForEachBlockEntity<cDispenserEntity,
 		E_BLOCK_DISPENSER
@@ -2145,7 +2244,7 @@ bool cChunk::ForEachDispenser(cDispenserCallback & a_Callback)
 
 
 
-bool cChunk::ForEachDropper(cDropperCallback & a_Callback)
+bool cChunk::ForEachDropper(cDropperCallback a_Callback)
 {
 	return GenericForEachBlockEntity<cDropperEntity,
 		E_BLOCK_DROPPER
@@ -2156,7 +2255,7 @@ bool cChunk::ForEachDropper(cDropperCallback & a_Callback)
 
 
 
-bool cChunk::ForEachDropSpenser(cDropSpenserCallback & a_Callback)
+bool cChunk::ForEachDropSpenser(cDropSpenserCallback a_Callback)
 {
 	return GenericForEachBlockEntity<cDropSpenserEntity,
 		E_BLOCK_DISPENSER,
@@ -2168,7 +2267,7 @@ bool cChunk::ForEachDropSpenser(cDropSpenserCallback & a_Callback)
 
 
 
-bool cChunk::ForEachFurnace(cFurnaceCallback & a_Callback)
+bool cChunk::ForEachFurnace(cFurnaceCallback a_Callback)
 {
 	return GenericForEachBlockEntity<cFurnaceEntity,
 		E_BLOCK_FURNACE,
@@ -2181,7 +2280,7 @@ bool cChunk::ForEachFurnace(cFurnaceCallback & a_Callback)
 
 
 template <class tyEntity, BLOCKTYPE... tBlocktype>
-bool cChunk::GenericDoWithBlockEntityAt(int a_BlockX, int a_BlockY, int a_BlockZ, cItemCallback<tyEntity>& a_Callback)
+bool cChunk::GenericDoWithBlockEntityAt(int a_BlockX, int a_BlockY, int a_BlockZ, cFunctionRef<bool(tyEntity &)> a_Callback)
 {
 	// The blockentity list is locked by the parent chunkmap's CS
 	cBlockEntity * Block = GetBlockEntity(a_BlockX, a_BlockY, a_BlockZ);
@@ -2196,14 +2295,14 @@ bool cChunk::GenericDoWithBlockEntityAt(int a_BlockX, int a_BlockY, int a_BlockZ
 	{
 		return false;  // Not any of the given tBlocktypes
 	}
-	return !a_Callback.Item(static_cast<tyEntity *>(Block));
+	return !a_Callback(*static_cast<tyEntity *>(Block));
 }
 
 
 
 
 
-bool cChunk::DoWithBlockEntityAt(int a_BlockX, int a_BlockY, int a_BlockZ, cBlockEntityCallback & a_Callback)
+bool cChunk::DoWithBlockEntityAt(int a_BlockX, int a_BlockY, int a_BlockZ, cBlockEntityCallback a_Callback)
 {
 	return GenericDoWithBlockEntityAt<cBlockEntity>(a_BlockX, a_BlockY, a_BlockZ, a_Callback);
 }
@@ -2211,7 +2310,7 @@ bool cChunk::DoWithBlockEntityAt(int a_BlockX, int a_BlockY, int a_BlockZ, cBloc
 
 
 
-bool cChunk::DoWithBeaconAt(int a_BlockX, int a_BlockY, int a_BlockZ, cBeaconCallback & a_Callback)
+bool cChunk::DoWithBeaconAt(int a_BlockX, int a_BlockY, int a_BlockZ, cBeaconCallback a_Callback)
 {
 	return GenericDoWithBlockEntityAt<cBeaconEntity,
 		E_BLOCK_BEACON
@@ -2221,8 +2320,17 @@ bool cChunk::DoWithBeaconAt(int a_BlockX, int a_BlockY, int a_BlockZ, cBeaconCal
 
 
 
+bool cChunk::DoWithBedAt(int a_BlockX, int a_BlockY, int a_BlockZ, cBedCallback a_Callback)
+{
+	return GenericDoWithBlockEntityAt<cBedEntity,
+		E_BLOCK_BED
+	>(a_BlockX, a_BlockY, a_BlockZ, a_Callback);
+}
 
-bool cChunk::DoWithBrewingstandAt(int a_BlockX, int a_BlockY, int a_BlockZ, cBrewingstandCallback & a_Callback)
+
+
+
+bool cChunk::DoWithBrewingstandAt(int a_BlockX, int a_BlockY, int a_BlockZ, cBrewingstandCallback a_Callback)
 {
 	return GenericDoWithBlockEntityAt<cBrewingstandEntity,
 		E_BLOCK_BREWING_STAND
@@ -2233,7 +2341,7 @@ bool cChunk::DoWithBrewingstandAt(int a_BlockX, int a_BlockY, int a_BlockZ, cBre
 
 
 
-bool cChunk::DoWithChestAt(int a_BlockX, int a_BlockY, int a_BlockZ, cChestCallback & a_Callback)
+bool cChunk::DoWithChestAt(int a_BlockX, int a_BlockY, int a_BlockZ, cChestCallback a_Callback)
 {
 	return GenericDoWithBlockEntityAt<cChestEntity,
 		E_BLOCK_CHEST,
@@ -2245,7 +2353,7 @@ bool cChunk::DoWithChestAt(int a_BlockX, int a_BlockY, int a_BlockZ, cChestCallb
 
 
 
-bool cChunk::DoWithDispenserAt(int a_BlockX, int a_BlockY, int a_BlockZ, cDispenserCallback & a_Callback)
+bool cChunk::DoWithDispenserAt(int a_BlockX, int a_BlockY, int a_BlockZ, cDispenserCallback a_Callback)
 {
 	return GenericDoWithBlockEntityAt<cDispenserEntity,
 		E_BLOCK_DISPENSER
@@ -2256,7 +2364,7 @@ bool cChunk::DoWithDispenserAt(int a_BlockX, int a_BlockY, int a_BlockZ, cDispen
 
 
 
-bool cChunk::DoWithDropperAt(int a_BlockX, int a_BlockY, int a_BlockZ, cDropperCallback & a_Callback)
+bool cChunk::DoWithDropperAt(int a_BlockX, int a_BlockY, int a_BlockZ, cDropperCallback a_Callback)
 {
 	return GenericDoWithBlockEntityAt<cDropperEntity,
 		E_BLOCK_DROPPER
@@ -2267,7 +2375,7 @@ bool cChunk::DoWithDropperAt(int a_BlockX, int a_BlockY, int a_BlockZ, cDropperC
 
 
 
-bool cChunk::DoWithDropSpenserAt(int a_BlockX, int a_BlockY, int a_BlockZ, cDropSpenserCallback & a_Callback)
+bool cChunk::DoWithDropSpenserAt(int a_BlockX, int a_BlockY, int a_BlockZ, cDropSpenserCallback a_Callback)
 {
 	return GenericDoWithBlockEntityAt<cDropSpenserEntity,
 		E_BLOCK_DISPENSER,
@@ -2279,7 +2387,7 @@ bool cChunk::DoWithDropSpenserAt(int a_BlockX, int a_BlockY, int a_BlockZ, cDrop
 
 
 
-bool cChunk::DoWithFurnaceAt(int a_BlockX, int a_BlockY, int a_BlockZ, cFurnaceCallback & a_Callback)
+bool cChunk::DoWithFurnaceAt(int a_BlockX, int a_BlockY, int a_BlockZ, cFurnaceCallback a_Callback)
 {
 	return GenericDoWithBlockEntityAt<cFurnaceEntity,
 		E_BLOCK_FURNACE,
@@ -2291,7 +2399,7 @@ bool cChunk::DoWithFurnaceAt(int a_BlockX, int a_BlockY, int a_BlockZ, cFurnaceC
 
 
 
-bool cChunk::DoWithNoteBlockAt(int a_BlockX, int a_BlockY, int a_BlockZ, cNoteBlockCallback & a_Callback)
+bool cChunk::DoWithNoteBlockAt(int a_BlockX, int a_BlockY, int a_BlockZ, cNoteBlockCallback a_Callback)
 {
 	return GenericDoWithBlockEntityAt<cNoteEntity,
 		E_BLOCK_NOTE_BLOCK
@@ -2302,7 +2410,7 @@ bool cChunk::DoWithNoteBlockAt(int a_BlockX, int a_BlockY, int a_BlockZ, cNoteBl
 
 
 
-bool cChunk::DoWithCommandBlockAt(int a_BlockX, int a_BlockY, int a_BlockZ, cCommandBlockCallback & a_Callback)
+bool cChunk::DoWithCommandBlockAt(int a_BlockX, int a_BlockY, int a_BlockZ, cCommandBlockCallback a_Callback)
 {
 	return GenericDoWithBlockEntityAt<cCommandBlockEntity,
 		E_BLOCK_COMMAND_BLOCK
@@ -2313,7 +2421,7 @@ bool cChunk::DoWithCommandBlockAt(int a_BlockX, int a_BlockY, int a_BlockZ, cCom
 
 
 
-bool cChunk::DoWithMobHeadAt(int a_BlockX, int a_BlockY, int a_BlockZ, cMobHeadCallback & a_Callback)
+bool cChunk::DoWithMobHeadAt(int a_BlockX, int a_BlockY, int a_BlockZ, cMobHeadCallback a_Callback)
 {
 	return GenericDoWithBlockEntityAt<cMobHeadEntity,
 		E_BLOCK_HEAD
@@ -2324,7 +2432,7 @@ bool cChunk::DoWithMobHeadAt(int a_BlockX, int a_BlockY, int a_BlockZ, cMobHeadC
 
 
 
-bool cChunk::DoWithFlowerPotAt(int a_BlockX, int a_BlockY, int a_BlockZ, cFlowerPotCallback & a_Callback)
+bool cChunk::DoWithFlowerPotAt(int a_BlockX, int a_BlockY, int a_BlockZ, cFlowerPotCallback a_Callback)
 {
 	return GenericDoWithBlockEntityAt<cFlowerPotEntity,
 		E_BLOCK_FLOWER_POT
@@ -2567,8 +2675,30 @@ void cChunk::BroadcastAttachEntity(const cEntity & a_Entity, const cEntity & a_V
 
 
 
+void cChunk::BroadcastLeashEntity(const cEntity & a_Entity, const cEntity & a_EntityLeashedTo)
+{
+	for (auto ClientHandle : m_LoadedByClient)
+	{
+		ClientHandle->SendLeashEntity(a_Entity, a_EntityLeashedTo);
+	}
+}
 
-void cChunk::BroadcastBlockAction(int a_BlockX, int a_BlockY, int a_BlockZ, char a_Byte1, char a_Byte2, BLOCKTYPE a_BlockType, const cClientHandle * a_Exclude)
+
+
+
+void cChunk::BroadcastUnleashEntity(const cEntity & a_Entity)
+{
+	for (auto ClientHandle : m_LoadedByClient)
+	{
+		ClientHandle->SendUnleashEntity(a_Entity);
+	}
+}
+
+
+
+
+
+void cChunk::BroadcastBlockAction(Vector3i a_BlockPos, char a_Byte1, char a_Byte2, BLOCKTYPE a_BlockType, const cClientHandle * a_Exclude)
 {
 	for (auto itr = m_LoadedByClient.begin(); itr != m_LoadedByClient.end(); ++itr)
 	{
@@ -2576,7 +2706,7 @@ void cChunk::BroadcastBlockAction(int a_BlockX, int a_BlockY, int a_BlockZ, char
 		{
 			continue;
 		}
-		(*itr)->SendBlockAction(a_BlockX, a_BlockY, a_BlockZ, a_Byte1, a_Byte2, a_BlockType);
+		(*itr)->SendBlockAction(a_BlockPos.x, a_BlockPos.y, a_BlockPos.z, a_Byte1, a_Byte2, a_BlockType);
 	}  // for itr - LoadedByClient[]
 }
 
@@ -2584,7 +2714,7 @@ void cChunk::BroadcastBlockAction(int a_BlockX, int a_BlockY, int a_BlockZ, char
 
 
 
-void cChunk::BroadcastBlockBreakAnimation(UInt32 a_EntityID, int a_BlockX, int a_BlockY, int a_BlockZ, char a_Stage, const cClientHandle * a_Exclude)
+void cChunk::BroadcastBlockBreakAnimation(UInt32 a_EntityID, Vector3i a_BlockPos, char a_Stage, const cClientHandle * a_Exclude)
 {
 	for (auto itr = m_LoadedByClient.begin(); itr != m_LoadedByClient.end(); ++itr)
 	{
@@ -2592,7 +2722,7 @@ void cChunk::BroadcastBlockBreakAnimation(UInt32 a_EntityID, int a_BlockX, int a
 		{
 			continue;
 		}
-		(*itr)->SendBlockBreakAnim(a_EntityID, a_BlockX, a_BlockY, a_BlockZ, a_Stage);
+		(*itr)->SendBlockBreakAnim(a_EntityID, a_BlockPos.x, a_BlockPos.y, a_BlockPos.z, a_Stage);
 	}  // for itr - LoadedByClient[]
 }
 
@@ -2600,10 +2730,10 @@ void cChunk::BroadcastBlockBreakAnimation(UInt32 a_EntityID, int a_BlockX, int a
 
 
 
-void cChunk::BroadcastBlockEntity(int a_BlockX, int a_BlockY, int a_BlockZ, const cClientHandle * a_Exclude)
+void cChunk::BroadcastBlockEntity(Vector3i a_BlockPos, const cClientHandle * a_Exclude)
 {
 	// We can operate on entity pointers, we're inside the ChunkMap's CS lock which guards the list
-	cBlockEntity * Entity = GetBlockEntity(a_BlockX, a_BlockY, a_BlockZ);
+	cBlockEntity * Entity = GetBlockEntity(a_BlockPos);
 	if (Entity == nullptr)
 	{
 		return;
@@ -2858,7 +2988,7 @@ void cChunk::BroadcastRemoveEntityEffect(const cEntity & a_Entity, int a_EffectI
 
 
 
-void cChunk::BroadcastSoundEffect(const AString & a_SoundName, double a_X, double a_Y, double a_Z, float a_Volume, float a_Pitch, const cClientHandle * a_Exclude)
+void cChunk::BroadcastSoundEffect(const AString & a_SoundName, Vector3d a_Position, float a_Volume, float a_Pitch, const cClientHandle * a_Exclude)
 {
 	for (auto itr = m_LoadedByClient.begin(); itr != m_LoadedByClient.end(); ++itr)
 	{
@@ -2866,7 +2996,7 @@ void cChunk::BroadcastSoundEffect(const AString & a_SoundName, double a_X, doubl
 		{
 			continue;
 		}
-		(*itr)->SendSoundEffect(a_SoundName, a_X, a_Y, a_Z, a_Volume, a_Pitch);
+		(*itr)->SendSoundEffect(a_SoundName, a_Position, a_Volume, a_Pitch);
 	}  // for itr - LoadedByClient[]
 }
 
@@ -2906,7 +3036,7 @@ void cChunk::BroadcastSpawnEntity(cEntity & a_Entity, const cClientHandle * a_Ex
 
 
 
-void cChunk::BroadcastThunderbolt(int a_BlockX, int a_BlockY, int a_BlockZ, const cClientHandle * a_Exclude)
+void cChunk::BroadcastThunderbolt(Vector3i a_BlockPos, const cClientHandle * a_Exclude)
 {
 	for (auto itr = m_LoadedByClient.begin(); itr != m_LoadedByClient.end(); ++itr)
 	{
@@ -2914,7 +3044,7 @@ void cChunk::BroadcastThunderbolt(int a_BlockX, int a_BlockY, int a_BlockZ, cons
 		{
 			continue;
 		}
-		(*itr)->SendThunderbolt(a_BlockX, a_BlockY, a_BlockZ);
+		(*itr)->SendThunderbolt(a_BlockPos.x, a_BlockPos.y, a_BlockPos.z);
 	}  // for itr - LoadedByClient[]
 }
 

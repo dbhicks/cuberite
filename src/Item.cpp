@@ -41,22 +41,42 @@ short cItem::GetMaxDamage(void) const
 	switch (m_ItemType)
 	{
 		case E_ITEM_BOW:             return 384;
+		case E_ITEM_CHAIN_BOOTS:     return 196;
+		case E_ITEM_CHAIN_CHESTPLATE:return 241;
+		case E_ITEM_CHAIN_HELMET:    return 166;
+		case E_ITEM_CHAIN_LEGGINGS:  return 226;
 		case E_ITEM_DIAMOND_AXE:     return 1561;
+		case E_ITEM_DIAMOND_BOOTS:   return 430;
+		case E_ITEM_DIAMOND_CHESTPLATE: return 529;
+		case E_ITEM_DIAMOND_HELMET:  return 364;
 		case E_ITEM_DIAMOND_HOE:     return 1561;
+		case E_ITEM_DIAMOND_LEGGINGS:return 496;
 		case E_ITEM_DIAMOND_PICKAXE: return 1561;
 		case E_ITEM_DIAMOND_SHOVEL:  return 1561;
 		case E_ITEM_DIAMOND_SWORD:   return 1561;
 		case E_ITEM_FLINT_AND_STEEL: return 64;
 		case E_ITEM_GOLD_AXE:        return 32;
+		case E_ITEM_GOLD_BOOTS:      return 92;
+		case E_ITEM_GOLD_CHESTPLATE: return 113;
+		case E_ITEM_GOLD_HELMET:     return 78;
 		case E_ITEM_GOLD_HOE:        return 32;
+		case E_ITEM_GOLD_LEGGINGS:   return 106;
 		case E_ITEM_GOLD_PICKAXE:    return 32;
 		case E_ITEM_GOLD_SHOVEL:     return 32;
 		case E_ITEM_GOLD_SWORD:      return 32;
 		case E_ITEM_IRON_AXE:        return 250;
+		case E_ITEM_IRON_BOOTS:      return 196;
+		case E_ITEM_IRON_CHESTPLATE: return 241;
+		case E_ITEM_IRON_HELMET:     return 166;
 		case E_ITEM_IRON_HOE:        return 250;
+		case E_ITEM_IRON_LEGGINGS:   return 226;
 		case E_ITEM_IRON_PICKAXE:    return 250;
 		case E_ITEM_IRON_SHOVEL:     return 250;
 		case E_ITEM_IRON_SWORD:      return 250;
+		case E_ITEM_LEATHER_BOOTS:   return 66;
+		case E_ITEM_LEATHER_CAP:     return 55;
+		case E_ITEM_LEATHER_PANTS:   return 76;
+		case E_ITEM_LEATHER_TUNIC:   return 81;
 		case E_ITEM_SHEARS:          return 250;
 		case E_ITEM_STONE_AXE:       return 131;
 		case E_ITEM_STONE_HOE:       return 131;
@@ -138,7 +158,12 @@ void cItem::GetJson(Json::Value & a_OutValue) const
 		}
 		if (!IsLoreEmpty())
 		{
-			a_OutValue["Lore"] = m_Lore;
+			auto & LoreArray = (a_OutValue["Lore"] = Json::Value(Json::arrayValue));
+
+			for (const auto & Line : m_LoreTable)
+			{
+				LoreArray.append(Line);
+			}
 		}
 
 		if (m_ItemColor.IsValid())
@@ -176,7 +201,11 @@ void cItem::FromJson(const Json::Value & a_Value)
 		m_Enchantments.Clear();
 		m_Enchantments.AddFromString(a_Value.get("ench", "").asString());
 		m_CustomName = a_Value.get("Name", "").asString();
-		m_Lore = a_Value.get("Lore", "").asString();
+		auto Lore = a_Value.get("Lore", Json::arrayValue);
+		for (auto & Line : Lore)
+		{
+			m_LoreTable.push_back(Line.asString());
+		}
 
 		int red = a_Value.get("Color_Red", -1).asInt();
 		int green = a_Value.get("Color_Green", -1).asInt();
@@ -208,14 +237,14 @@ void cItem::FromJson(const Json::Value & a_Value)
 
 
 
-bool cItem::IsEnchantable(short a_ItemType, bool a_WithBook)
+bool cItem::IsEnchantable(short a_ItemType, bool a_FromBook)
 {
 	if (
 		ItemCategory::IsAxe(a_ItemType) ||
 		ItemCategory::IsSword(a_ItemType) ||
 		ItemCategory::IsShovel(a_ItemType) ||
 		ItemCategory::IsPickaxe(a_ItemType) ||
-		(a_WithBook && ItemCategory::IsHoe(a_ItemType)) ||
+		(a_FromBook && ItemCategory::IsHoe(a_ItemType)) ||
 		ItemCategory::IsArmor(a_ItemType)
 	)
 	{
@@ -235,7 +264,7 @@ bool cItem::IsEnchantable(short a_ItemType, bool a_WithBook)
 		case E_ITEM_SHEARS:
 		case E_ITEM_FLINT_AND_STEEL:
 		{
-			return a_WithBook;
+			return a_FromBook;
 		}
 	}
 
@@ -393,6 +422,199 @@ bool cItem::EnchantByXPLevels(int a_NumXPLevels)
 	m_Enchantments.AddFromString(Enchantment4.ToString());
 
 	return true;
+}
+
+
+
+
+
+int cItem::AddEnchantment(int a_EnchantmentID, unsigned int a_Level, bool a_FromBook)
+{
+	unsigned int OurLevel = m_Enchantments.GetLevel(a_EnchantmentID);
+	int Multiplier = cEnchantments::GetXPCostMultiplier(a_EnchantmentID, a_FromBook);
+	unsigned int NewLevel = 0;
+	if (OurLevel > a_Level)
+	{
+		// They don't add anything to us
+		NewLevel = OurLevel;
+	}
+	else if (OurLevel == a_Level)
+	{
+		// Bump it by 1
+		NewLevel = OurLevel + 1;
+	}
+	else
+	{
+		// Take the sacrifice's level
+		NewLevel = a_Level;
+	}
+	unsigned int LevelCap = cEnchantments::GetLevelCap(a_EnchantmentID);
+	if (NewLevel > LevelCap)
+	{
+		NewLevel = LevelCap;
+	}
+
+	m_Enchantments.SetLevel(a_EnchantmentID, NewLevel);
+	return static_cast<int>(NewLevel) * Multiplier;
+}
+
+
+
+
+
+bool cItem::CanHaveEnchantment(int a_EnchantmentID)
+{
+	if (m_ItemType == E_ITEM_ENCHANTED_BOOK)
+	{
+		// Enchanted books can take anything
+		return true;
+	}
+
+	// The organization here is based on the summary at:
+	// https://minecraft.gamepedia.com/Enchanting
+	// as of July 2017 (Minecraft 1.12).
+
+	// Hand tool enchantments
+	static const std::set<int> SwordEnchantments =
+	{
+		cEnchantments::enchBaneOfArthropods,
+		cEnchantments::enchFireAspect,
+		cEnchantments::enchKnockback,
+		cEnchantments::enchLooting,
+		cEnchantments::enchSharpness,
+		cEnchantments::enchSmite,
+		cEnchantments::enchUnbreaking
+	};
+	static const std::set<int> AxeEnchantments =
+	{
+		cEnchantments::enchBaneOfArthropods,
+		cEnchantments::enchEfficiency,
+		cEnchantments::enchFortune,
+		cEnchantments::enchSharpness,
+		cEnchantments::enchSilkTouch,
+		cEnchantments::enchSmite,
+		cEnchantments::enchUnbreaking
+	};
+	static const std::set<int> ToolEnchantments =
+	{
+		cEnchantments::enchEfficiency,
+		cEnchantments::enchFortune,
+		cEnchantments::enchSilkTouch,
+		cEnchantments::enchUnbreaking
+	};
+	static const std::set<int> ShearEnchantments =
+	{
+		cEnchantments::enchEfficiency,
+		cEnchantments::enchUnbreaking
+	};
+	static const std::set<int> BowEnchantments =
+	{
+		cEnchantments::enchFlame,
+		cEnchantments::enchInfinity,
+		cEnchantments::enchPower,
+		cEnchantments::enchPunch
+	};
+	static const std::set<int> FishingEnchantments =
+	{
+		cEnchantments::enchLuckOfTheSea,
+		cEnchantments::enchLure
+	};
+	static const std::set<int> MiscEnchantments =
+	{
+		cEnchantments::enchUnbreaking
+	};
+
+	if (ItemCategory::IsSword(m_ItemType))
+	{
+		return SwordEnchantments.count(a_EnchantmentID) > 0;
+	}
+	if (ItemCategory::IsAxe(m_ItemType))
+	{
+		return AxeEnchantments.count(a_EnchantmentID) > 0;
+	}
+	if (ItemCategory::IsPickaxe(m_ItemType) || ItemCategory::IsShovel(m_ItemType))
+	{
+		return ToolEnchantments.count(a_EnchantmentID) > 0;
+	}
+	if (m_ItemType == E_ITEM_SHEARS)
+	{
+		return ShearEnchantments.count(a_EnchantmentID) > 0;
+	}
+	if (m_ItemType == E_ITEM_BOW)
+	{
+		return BowEnchantments.count(a_EnchantmentID) > 0;
+	}
+	if (m_ItemType == E_ITEM_FISHING_ROD)
+	{
+		return FishingEnchantments.count(a_EnchantmentID) > 0;
+	}
+	if (ItemCategory::IsHoe(m_ItemType) || (m_ItemType == E_ITEM_FLINT_AND_STEEL) || (m_ItemType == E_ITEM_CARROT_ON_STICK) || (m_ItemType == E_ITEM_SHIELD))
+	{
+		return MiscEnchantments.count(a_EnchantmentID) > 0;
+	}
+
+	// Armor enchantments
+	static const std::set<int> ArmorEnchantments =
+	{
+		cEnchantments::enchBlastProtection,
+		cEnchantments::enchFireProtection,
+		cEnchantments::enchProjectileProtection,
+		cEnchantments::enchProtection,
+		cEnchantments::enchThorns,
+		cEnchantments::enchUnbreaking
+	};
+	static const std::set<int> HatOnlyEnchantments =
+	{
+		cEnchantments::enchAquaAffinity,
+		cEnchantments::enchRespiration
+	};
+	static const std::set<int> BootOnlyEnchantments =
+	{
+		cEnchantments::enchDepthStrider,
+		cEnchantments::enchFeatherFalling
+	};
+
+	if (ItemCategory::IsBoots(m_ItemType))
+	{
+		return (BootOnlyEnchantments.count(a_EnchantmentID) > 0) || (ArmorEnchantments.count(a_EnchantmentID) > 0);
+	}
+	if (ItemCategory::IsHelmet(m_ItemType))
+	{
+		return (HatOnlyEnchantments.count(a_EnchantmentID) > 0) || (ArmorEnchantments.count(a_EnchantmentID) > 0);
+	}
+	if (ItemCategory::IsArmor(m_ItemType))
+	{
+		return ArmorEnchantments.count(a_EnchantmentID) > 0;
+	}
+	return false;
+}
+
+
+
+
+
+int cItem::AddEnchantmentsFromItem(const cItem & a_Other)
+{
+	bool FromBook = (a_Other.m_ItemType == E_ITEM_ENCHANTED_BOOK);
+
+	// Consider each enchantment seperately
+	int EnchantingCost = 0;
+	for (auto & Enchantment : a_Other.m_Enchantments)
+	{
+		if (CanHaveEnchantment(Enchantment.first))
+		{
+			if (!m_Enchantments.CanAddEnchantment(Enchantment.first))
+			{
+				// Cost of incompatible enchantments
+				EnchantingCost += 1;
+			}
+			else
+			{
+				EnchantingCost += AddEnchantment(Enchantment.first, Enchantment.second, FromBook);
+			}
+		}
+	}
+	return EnchantingCost;
 }
 
 

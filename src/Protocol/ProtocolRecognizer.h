@@ -18,9 +18,9 @@
 
 
 // Adjust these if a new protocol is added or an old one is removed:
-#define MCS_CLIENT_VERSIONS "1.8.x, 1.9.x, 1.10.x, 1.11.x, 1.12"
-#define MCS_PROTOCOL_VERSIONS "47, 107, 108, 109, 110, 210, 315, 316, 335"
-#define MCS_LATEST_PROTOCOL_VERSION 335
+#define MCS_CLIENT_VERSIONS "1.8.x, 1.9.x, 1.10.x, 1.11.x, 1.12.x"
+#define MCS_PROTOCOL_VERSIONS "47, 107, 108, 109, 110, 210, 315, 316, 335, 338, 340"
+#define MCS_LATEST_PROTOCOL_VERSION 340
 
 
 
@@ -43,7 +43,9 @@ public:
 		PROTO_VERSION_1_11_0 = 315,
 		PROTO_VERSION_1_11_1 = 316,
 		PROTO_VERSION_1_12   = 335,
-	} ;
+		PROTO_VERSION_1_12_1 = 338,
+		PROTO_VERSION_1_12_2 = 340,
+	};
 
 	cProtocolRecognizer(cClientHandle * a_Client);
 	virtual ~cProtocolRecognizer() override;
@@ -86,6 +88,7 @@ public:
 	virtual void SendHideTitle                  (void) override;
 	virtual void SendInventorySlot              (char a_WindowID, short a_SlotNum, const cItem & a_Item) override;
 	virtual void SendKeepAlive                  (UInt32 a_PingID) override;
+	virtual void SendLeashEntity                (const cEntity & a_Entity, const cEntity & a_EntityLeashedTo) override;
 	virtual void SendLogin                      (const cPlayer & a_Player, const cWorld & a_World) override;
 	virtual void SendLoginSuccess               (void) override;
 	virtual void SendMapData                    (const cMap & a_Map, int a_DataStartX, int a_DataStartY) override;
@@ -129,6 +132,7 @@ public:
 	virtual void SendThunderbolt                (int a_BlockX, int a_BlockY, int a_BlockZ) override;
 	virtual void SendTitleTimes                 (int a_FadeInTicks, int a_DisplayTicks, int a_FadeOutTicks) override;
 	virtual void SendTimeUpdate                 (Int64 a_WorldAge, Int64 a_TimeOfDay, bool a_DoDaylightCycle) override;
+	virtual void SendUnleashEntity              (const cEntity & a_Entity) override;
 	virtual void SendUnloadChunk                (int a_ChunkX, int a_ChunkZ) override;
 	virtual void SendUpdateBlockEntity          (cBlockEntity & a_BlockEntity) override;
 	virtual void SendUpdateSign                 (int a_BlockX, int a_BlockY, int a_BlockZ, const AString & a_Line1, const AString & a_Line2, const AString & a_Line3, const AString & a_Line4) override;
@@ -143,8 +147,6 @@ public:
 
 	virtual void SendData(const char * a_Data, size_t a_Size) override;
 
-	void SendPingStatusResponse(void);
-
 protected:
 	/** The recognized protocol */
 	cProtocol * m_Protocol;
@@ -155,6 +157,16 @@ protected:
 	/** Is a server list ping for an unrecognized version currently occuring? */
 	bool m_InPingForUnrecognizedVersion;
 
+	/** GetPacketId is implemented in each protocol version class */
+	virtual UInt32 GetPacketId(eOutgoingPackets a_Packet) override
+	{
+		ASSERT(!"cProtocolRecognizer::GetPacketId should never be called! Something is horribly wrong! (this method being called implies that someone other than a Protocol-derived class is calling GetPacketId)");
+		return 0;
+	}
+
+	// Packet handlers while in status state (m_InPingForUnrecognizedVersion == true)
+	void HandlePacketStatusRequest();
+	void HandlePacketStatusPing();
 
 	/** Tries to recognize protocol based on m_Buffer contents; returns true if recognized */
 	bool TryRecognizeProtocol(void);

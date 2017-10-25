@@ -2,7 +2,6 @@
 #pragma once
 
 #include "../Item.h"
-#include "../Vector3.h"
 
 
 
@@ -46,6 +45,7 @@ class cWorld;
 class cClientHandle;
 class cPlayer;
 class cChunk;
+class cMonster;
 
 
 
@@ -88,6 +88,7 @@ public:
 		etFloater,
 		etItemFrame,
 		etPainting,
+		etLeashKnot,
 
 		// Common variations
 		etMob = etMonster,  // DEPRECATED, use etMonster instead!
@@ -137,16 +138,16 @@ public:
 	static const int FIRE_TICKS_PER_DAMAGE = 10;   ///< Ticks to wait between damaging an entity when it stands in fire
 	static const int FIRE_DAMAGE           = 1;    ///< Damage to deal when standing in fire
 	static const int LAVA_TICKS_PER_DAMAGE = 10;   ///< Ticks to wait between damaging an entity when it stands in lava
-	static const int LAVA_DAMAGE           = 5;    ///< Damage to deal when standing in lava
+	static const int LAVA_DAMAGE           = 4;    ///< Damage to deal when standing in lava
 	static const int BURN_TICKS_PER_DAMAGE = 20;   ///< Ticks to wait between damaging an entity when it is burning
 	static const int BURN_DAMAGE           = 1;    ///< Damage to deal when the entity is burning
 
-	static const int BURN_TICKS            = 200;  ///< Ticks to keep an entity burning after it has stood in lava / fire
+	static const int BURN_TICKS            = 160;  ///< Ticks to keep an entity burning after it has stood in lava / fire
 
 	static const int MAX_AIR_LEVEL         = 300;  ///< Maximum air an entity can have
 	static const int DROWNING_TICKS        = 20;   ///< Number of ticks per heart of damage
 
-	static const int VOID_BOUNDARY         = -46;  ///< Y position to begin applying void damage
+	static const int VOID_BOUNDARY         = -64;  ///< Y position to begin applying void damage
 	static const int FALL_DAMAGE_HEIGHT    = 4;    ///< Y difference after which fall damage is applied
 
 	/** Special ID that is considered an "invalid value", signifying no entity. */
@@ -158,7 +159,7 @@ public:
 
 	/** Spawns the entity in the world; returns true if spawned, false if not (plugin disallowed).
 	Adds the entity to the world. */
-	virtual bool Initialize(cWorld & a_World);
+	virtual bool Initialize(OwnedEntity a_Self, cWorld & a_EntityWorld);
 
 	// tolua_begin
 
@@ -177,6 +178,7 @@ public:
 	bool IsExpOrb      (void) const { return (m_EntityType == etExpOrb);       }
 	bool IsFloater     (void) const { return (m_EntityType == etFloater);      }
 	bool IsItemFrame   (void) const { return (m_EntityType == etItemFrame);    }
+	bool IsLeashKnot   (void) const { return (m_EntityType == etLeashKnot);    }
 	bool IsPainting    (void) const { return (m_EntityType == etPainting);     }
 
 	/** Returns true if the entity is of the specified class or a subclass (cPawn's IsA("cEntity") returns true) */
@@ -190,6 +192,9 @@ public:
 
 	/** Returns the topmost class's parent class name for the object. cEntity returns an empty string (no parent). */
 	virtual const char * GetParentClass(void) const;
+
+	/** Returns whether blocks can be placed intersecting this entities' hitbox */
+	virtual bool DoesPreventBlockPlacement(void) const { return true; }
 
 	cWorld * GetWorld(void) const { return m_World; }
 
@@ -212,7 +217,6 @@ public:
 	int GetChunkZ(void) const { return FloorC(m_Position.z / cChunkDef::Width); }
 
 	void SetHeadYaw (double a_HeadYaw);
-	void SetHeight  (double a_Height);
 	void SetMass    (double a_Mass);
 	void SetPosX    (double a_PosX) { SetPosition({a_PosX, m_Position.y, m_Position.z}); }
 	void SetPosY    (double a_PosY) { SetPosition({m_Position.x, a_PosY, m_Position.z}); }
@@ -227,7 +231,7 @@ public:
 	void SetSpeed(double a_SpeedX, double a_SpeedY, double a_SpeedZ);
 
 	/** Sets the speed of the entity, measured in m / sec */
-	void SetSpeed(const Vector3d & a_Speed) { SetSpeed(a_Speed.x, a_Speed.y, a_Speed.z); }
+	void SetSpeed(Vector3d a_Speed) { SetSpeed(a_Speed.x, a_Speed.y, a_Speed.z); }
 
 	/** Sets the speed in the X axis, leaving the other speed components intact. Measured in m / sec. */
 	void SetSpeedX(double a_SpeedX);
@@ -237,8 +241,6 @@ public:
 
 	/** Sets the speed in the Z axis, leaving the other speed components intact. Measured in m / sec. */
 	void SetSpeedZ(double a_SpeedZ);
-
-	void SetWidth   (double a_Width);
 
 	void AddPosX    (double a_AddPosX) { AddPosition(a_AddPosX, 0, 0); }
 	void AddPosY    (double a_AddPosY) { AddPosition(0, a_AddPosY, 0); }
@@ -265,7 +267,7 @@ public:
 	bool IsTicking(void) const;
 
 	/** Destroys the entity and schedules it for memory freeing; if a_ShouldBroadcast is set to true, broadcasts the DestroyEntity packet */
-	void Destroy(bool a_ShouldBroadcast = true);
+	virtual void Destroy(bool a_ShouldBroadcast = true);
 
 	/** Makes this pawn take damage from an attack by a_Attacker. Damage values are calculated automatically and DoTakeDamage() called */
 	void TakeDamage(cEntity & a_Attacker);
@@ -295,11 +297,19 @@ public:
 
 	// tolua_end
 
+	void SetHeight(double a_Height);
+
+	void SetWidth(double a_Width);
+
 	/** Exported in ManualBindings */
 	const Vector3d & GetPosition(void) const { return m_Position; }
 
 	/** Exported in ManualBindings */
 	const Vector3d & GetSpeed(void) const { return m_Speed; }
+
+	/** Returns the last position we sent to all the clients. Use this to
+	initialize clients with our position. */
+	Vector3d GetLastSentPos(void) const { return m_LastSentPosition; }
 
 	/** Destroy the entity without scheduling memory freeing. This should only be used by cChunk or cClientHandle for internal memory management. */
 	void DestroyNoScheduling(bool a_ShouldBroadcast);
@@ -320,6 +330,9 @@ public:
 	/** Returns the hitpoints out of a_RawDamage that the currently equipped armor would cover */
 	virtual int GetArmorCoverAgainst(const cEntity * a_Attacker, eDamageType a_DamageType, int a_RawDamage);
 
+	/** Returns the hitpoints that the currently equipped armor's enchantments would cover */
+	virtual int GetEnchantmentCoverAgainst(const cEntity * a_Attacker, eDamageType a_DamageType, int a_Damage);
+
 	/** Returns the knockback amount that the currently equipped items would cause to a_Receiver on a hit */
 	virtual double GetKnockbackAmountAgainst(const cEntity & a_Receiver);
 
@@ -337,6 +350,9 @@ public:
 
 	/** Returns the currently equipped boots; empty item if none */
 	virtual cItem GetEquippedBoots(void) const { return cItem(); }
+
+	/** Applies damage to the armor after the armor blocked the given amount */
+	virtual void ApplyArmorDamage(int DamageBlocked);
 
 	// tolua_end
 
@@ -417,7 +433,7 @@ public:
 	virtual void TeleportToCoords(double a_PosX, double a_PosY, double a_PosZ);
 
 	/** Schedules a MoveToWorld call to occur on the next Tick of the entity */
-	void ScheduleMoveToWorld(cWorld * a_World, Vector3d a_NewPosition, bool a_ShouldSetPortalCooldown = false);
+	void ScheduleMoveToWorld(cWorld * a_World, Vector3d a_NewPosition, bool a_ShouldSetPortalCooldown = false, bool a_ShouldSendRespawn = false);
 
 	bool MoveToWorld(cWorld * a_World, bool a_ShouldSendRespawn, Vector3d a_NewPosition);
 
@@ -511,6 +527,15 @@ public:
 	/** Set the entity's status to either ticking or not ticking. */
 	void SetIsTicking(bool a_IsTicking);
 
+	/** Adds a mob to the leashed list of mobs */
+	void AddLeashedMob(cMonster * a_Monster);
+
+	/** Removes a mob from the leashed list of mobs */
+	void RemoveLeashedMob(cMonster * a_Monster);
+
+	/** Returs whether the entity has any mob leashed to */
+	bool HasAnyMobLeashed() const { return m_LeashedMobs.size() > 0; }
+
 protected:
 	/** Structure storing the portal delay timer and cooldown boolean */
 	struct sPortalCooldownData
@@ -560,7 +585,7 @@ protected:
 	/** Stores the air drag that is applied to the entity every tick, measured in speed ratio per tick
 	Acts as air friction and slows down flight
 	Will be interpolated if the server tick rate varies
-	Data: http://minecraft.gamepedia.com/Entity#Motion_of_entities */
+	Data: https://minecraft.gamepedia.com/Entity#Motion_of_entities */
 	float m_AirDrag;
 
 	Vector3d m_LastPosition;
@@ -572,6 +597,7 @@ protected:
 	/** State variables for ScheduleMoveToWorld. */
 	bool m_IsWorldChangeScheduled;
 	bool m_WorldChangeSetPortalCooldown;
+	bool m_WorldChangeSendRespawn;
 	cWorld * m_NewWorld;
 	Vector3d m_NewWorldPosition;
 
@@ -660,9 +686,13 @@ private:
 	/** If a player hit a entity, the entity receive a invulnerable of 10 ticks.
 	While this ticks, a player can't hit this entity. */
 	int m_InvulnerableTicks;
-} ;  // tolua_export
 
-typedef std::list<cEntity *> cEntityList;
+	typedef std::list<cMonster *> cMonsterList;
+
+	/** List of leashed mobs to this entity */
+	cMonsterList m_LeashedMobs;
+
+} ;  // tolua_export
 
 
 

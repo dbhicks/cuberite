@@ -7,7 +7,6 @@
 #include "Mobs/Monster.h"
 #include "Root.h"
 #include "World.h"
-#include "ChunkDef.h"
 #include "Bindings/PluginManager.h"
 #include "ChatColor.h"
 #include "Entities/Player.h"
@@ -20,7 +19,6 @@
 #include "FastRandom.h"
 
 #include "IniFile.h"
-#include "Vector3.h"
 
 #include <fstream>
 #include <sstream>
@@ -118,7 +116,6 @@ void cServer::cTickThread::Execute(void)
 
 cServer::cServer(void) :
 	m_PlayerCount(0),
-	m_PlayerCountDiff(0),
 	m_ClientViewDistance(0),
 	m_bIsConnected(false),
 	m_bRestarting(false),
@@ -148,24 +145,18 @@ void cServer::ClientMovedToWorld(const cClientHandle * a_Client)
 
 
 
-void cServer::PlayerCreated(const cPlayer * a_Player)
+void cServer::PlayerCreated()
 {
-	UNUSED(a_Player);
-	// To avoid deadlocks, the player count is not handled directly, but rather posted onto the tick thread
-	cCSLock Lock(m_CSPlayerCountDiff);
-	m_PlayerCountDiff += 1;
+	m_PlayerCount++;
 }
 
 
 
 
 
-void cServer::PlayerDestroying(const cPlayer * a_Player)
+void cServer::PlayerDestroyed()
 {
-	UNUSED(a_Player);
-	// To avoid deadlocks, the player count is not handled directly, but rather posted onto the tick thread
-	cCSLock Lock(m_CSPlayerCountDiff);
-	m_PlayerCountDiff -= 1;
+	m_PlayerCount--;
 }
 
 
@@ -176,11 +167,9 @@ bool cServer::InitServer(cSettingsRepositoryInterface & a_Settings, bool a_Shoul
 {
 	m_Description = a_Settings.GetValueSet("Server", "Description", "Cuberite - in C++!");
 	m_ShutdownMessage = a_Settings.GetValueSet("Server", "ShutdownMessage", "Server shutdown");
-	m_MaxPlayers  = a_Settings.GetValueSetI("Server", "MaxPlayers", 100);
+	m_MaxPlayers = static_cast<size_t>(a_Settings.GetValueSetI("Server", "MaxPlayers", 100));
 	m_bIsHardcore = a_Settings.GetValueSetB("Server", "HardcoreEnabled", false);
 	m_bAllowMultiLogin = a_Settings.GetValueSetB("Server", "AllowMultiLogin", false);
-	m_PlayerCount = 0;
-	m_PlayerCountDiff = 0;
 
 	m_FaviconData = Base64Encode(cFile::ReadWholeFile(FILE_IO_PREFIX + AString("favicon.png")));  // Will return empty string if file nonexistant; client doesn't mind
 
@@ -246,12 +235,52 @@ bool cServer::InitServer(cSettingsRepositoryInterface & a_Settings, bool a_Shoul
 
 
 
-int cServer::GetNumPlayers(void) const
+bool cServer::RegisterForgeMod(const AString & a_ModName, const AString & a_ModVersion, UInt32 a_ProtocolVersionNumber)
 {
-	cCSLock Lock(m_CSPlayerCount);
-	return m_PlayerCount;
+	auto & Mods = RegisteredForgeMods(a_ProtocolVersionNumber);
+
+	return Mods.insert({a_ModName, a_ModVersion}).second;
 }
 
+
+
+
+
+void cServer::UnregisterForgeMod(const AString & a_ModName, UInt32 a_ProtocolVersionNumber)
+{
+	auto & Mods = RegisteredForgeMods(a_ProtocolVersionNumber);
+
+	auto it = Mods.find(a_ModName);
+	if (it != Mods.end())
+	{
+		Mods.erase(it);
+	}
+}
+
+
+
+
+AStringMap & cServer::RegisteredForgeMods(const UInt32 a_Protocol)
+{
+	auto it = m_ForgeModsByVersion.find(a_Protocol);
+
+	if (it == m_ForgeModsByVersion.end())
+	{
+		AStringMap mods;
+		m_ForgeModsByVersion.insert({a_Protocol, mods});
+		return m_ForgeModsByVersion.find(a_Protocol)->second;
+	}
+
+	return it->second;
+}
+
+
+
+
+const AStringMap & cServer::GetRegisteredForgeMods(const UInt32 a_Protocol)
+{
+	return RegisteredForgeMods(a_Protocol);
+}
 
 
 
@@ -300,17 +329,6 @@ cTCPLink::cCallbacksPtr cServer::OnConnectionAccepted(const AString & a_RemoteIP
 
 bool cServer::Tick(float a_Dt)
 {
-	// Apply the queued playercount adjustments (postponed to avoid deadlocks)
-	int PlayerCountDiff = 0;
-	{
-		cCSLock Lock(m_CSPlayerCountDiff);
-		std::swap(PlayerCountDiff, m_PlayerCountDiff);
-	}
-	{
-		cCSLock Lock(m_CSPlayerCount);
-		m_PlayerCount += PlayerCountDiff;
-	}
-
 	// Send the tick to the plugins, as well as let the plugin manager reload, if asked to (issue #102):
 	cPluginManager::Get()->Tick(a_Dt);
 
@@ -480,26 +498,20 @@ void cServer::ExecuteConsoleCommand(const AString & a_Cmd, cCommandOutputCallbac
 	}
 	if (split[0] == "destroyentities")
 	{
-		class WorldCallback : public cWorldListCallback
-		{
-			virtual bool Item(cWorld * a_World) override
+		cRoot::Get()->ForEachWorld([](cWorld & a_World)
 			{
-				class EntityCallback : public cEntityCallback
-				{
-					virtual bool Item(cEntity * a_Entity) override
+				a_World.ForEachEntity([](cEntity & a_Entity)
 					{
-						if (!a_Entity->IsPlayer())
+						if (!a_Entity.IsPlayer())
 						{
-							a_Entity->Destroy();
+							a_Entity.Destroy();
 						}
 						return false;
 					}
-				} EC;
-				a_World->ForEachEntity(EC);
+				);
 				return false;
 			}
-		} WC;
-		cRoot::Get()->ForEachWorld(WC);
+		);
 		a_Output.Out("Destroyed all entities");
 		a_Output.Finished();
 		return;
@@ -654,9 +666,17 @@ void cServer::KickUser(int a_ClientID, const AString & a_Reason)
 
 
 
-void cServer::AuthenticateUser(int a_ClientID, const AString & a_Name, const AString & a_UUID, const Json::Value & a_Properties)
+void cServer::AuthenticateUser(int a_ClientID, const AString & a_Name, const cUUID & a_UUID, const Json::Value & a_Properties)
 {
 	cCSLock Lock(m_CSClients);
+
+	// Check max players condition within lock (expect server and authenticator thread to both call here)
+	if (GetNumPlayers() >= GetMaxPlayers())
+	{
+		KickUser(a_ClientID, "The server is currently full :(" "\n" "Try again later?");
+		return;
+	}
+
 	for (auto itr = m_Clients.begin(); itr != m_Clients.end(); ++itr)
 	{
 		if ((*itr)->GetUniqueID() == a_ClientID)

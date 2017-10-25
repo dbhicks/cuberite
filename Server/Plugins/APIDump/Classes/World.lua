@@ -18,7 +18,7 @@ return
 			Each world runs several separate threads used for various housekeeping purposes, the most important
 			of those is the Tick thread. This thread updates the game logic 20 times per second, and it is
 			the thread where all the gameplay actions are evaluated. Liquid physics, entity interactions,
-			player ovement etc., all are applied in this thread.</p>
+			player movement etc., all are applied in this thread.</p>
 			<p>
 			Additional threads include the generation thread (generates new chunks as needed, storage thread
 			(saves and loads chunk from the disk), lighting thread (updates block light values) and the
@@ -45,6 +45,34 @@ return
 					},
 				},
 				Notes = "Returns whether command blocks are enabled on the (entire) server",
+			},
+			BroadcastBlockAction =
+			{
+				Params =
+				{
+					{
+						Name = "BlockPos",
+						Type = "Vector3i",
+					},
+					{
+						Name = "ActionByte1",
+						Type = "number",
+					},
+					{
+						Name = "ActionByte2",
+						Type = "number",
+					},
+					{
+						Name = "BlockType",
+						Type = "number",
+					},
+					{
+						Name = "ExcludeClient",
+						Type = "cClientHandle",
+						IsOptional = true,
+					},
+				},
+				Notes = "Broadcasts the BlockAction packet to all clients who have the appropriate chunk loaded (except ExcludeClient). The contents of the packet are specified by the parameters for the call, the blocktype needn't match the actual block that is present in the world data at the specified location.",
 			},
 			BroadcastBlockAction =
 			{
@@ -80,7 +108,7 @@ return
 						IsOptional = true,
 					},
 				},
-				Notes = "Broadcasts the BlockAction packet to all clients who have the appropriate chunk loaded (except ExcludeClient). The contents of the packet are specified by the parameters for the call, the blocktype needn't match the actual block that is present in the world data at the specified location.",
+				Notes = "Broadcasts the BlockAction packet to all clients who have the appropriate chunk loaded (except ExcludeClient). The contents of the packet are specified by the parameters for the call, the blocktype needn't match the actual block that is present in the world data at the specified location. (DEPRECATED)",
 			},
 			BroadcastChat =
 			{
@@ -276,6 +304,34 @@ return
 						Type = "string",
 					},
 					{
+						Name = "Position",
+						Type = "Vector3d",
+					},
+					{
+						Name = "Volume",
+						Type = "number",
+					},
+					{
+						Name = "Pitch",
+						Type = "number",
+					},
+					{
+						Name = "ExcludeClient",
+						Type = "cClientHandle",
+						IsOptional = true,
+					},
+				},
+				Notes = "Sends the specified sound effect to all players in this world, except the optional ExceptClient",
+			},
+			BroadcastSoundEffect =
+			{
+				Params =
+				{
+					{
+						Name = "SoundName",
+						Type = "string",
+					},
+					{
 						Name = "X",
 						Type = "number",
 					},
@@ -301,7 +357,7 @@ return
 						IsOptional = true,
 					},
 				},
-				Notes = "Sends the specified sound effect to all players in this world, except the optional ExceptClient",
+				Notes = "Sends the specified sound effect to all players in this world, except the optional ExceptClient (DEPRECATED, use vector-parametered version instead)",
 			},
 			BroadcastSoundParticleEffect =
 			{
@@ -340,6 +396,17 @@ return
 				Params =
 				{
 					{
+						Name = "Position",
+						Type = "Vector3d",
+					},
+				},
+				Notes = "Creates a thunderbolt at the specified coords",
+			},
+			CastThunderbolt =
+			{
+				Params =
+				{
+					{
 						Name = "X",
 						Type = "number",
 					},
@@ -352,7 +419,7 @@ return
 						Type = "number",
 					},
 				},
-				Notes = "Creates a thunderbolt at the specified coords",
+				Notes = "Creates a thunderbolt at the specified coords (DEPRECATED, use vector-parametered version instead)",
 			},
 			ChangeWeather =
 			{
@@ -505,6 +572,35 @@ function OnAllChunksAvailable()</pre> All return values from the callbacks are i
 				},
 				Notes = "If there is a beacon at the specified coords, calls the CallbackFunction with the {{cBeaconEntity}} parameter representing the beacon. The CallbackFunction has the following signature: <pre class=\"prettyprint lang-lua\">function Callback({{cBeaconEntity|BeaconEntity}})</pre> The function returns false if there is no beacon, or if there is, it returns the bool value that the callback has returned.",
 			},
+			DoWithBedAt =
+			{
+				Params =
+				{
+					{
+						Name = "BlockX",
+						Type = "number",
+					},
+					{
+						Name = "BlockY",
+						Type = "number",
+					},
+					{
+						Name = "BlockZ",
+						Type = "number",
+					},
+					{
+						Name = "CallbackFunction",
+						Type = "function",
+					},
+				},
+				Returns =
+				{
+					{
+						Type = "boolean",
+					},
+				},
+				Notes = "If there is a bed at the specified coords, calls the CallbackFunction with the {{cBedEntity}} parameter representing the bed. The CallbackFunction has the following signature: <pre class=\"prettyprint lang-lua\">function Callback({{cBedEntity|cBedEntity}})</pre> The function returns false if there is no bed, or if there is, it returns the bool value that the callback has returned.",
+			},
 			DoWithBlockEntityAt =
 			{
 				Params =
@@ -532,7 +628,7 @@ function OnAllChunksAvailable()</pre> All return values from the callbacks are i
 						Type = "boolean",
 					},
 				},
-				Notes = "If there is a block entity at the specified coords, calls the CallbackFunction with the {{cBlockEntity}} parameter representing the block entity. The CallbackFunction has the following signature: <pre class=\"prettyprint lang-lua\">function Callback({{cBlockEntity|BlockEntity}})</pre> The function returns false if there is no block entity, or if there is, it returns the bool value that the callback has returned. Use {{tolua}}.cast() to cast the Callback's BlockEntity parameter to the correct {{cBlockEntity}} descendant.",
+				Notes = "If there is a block entity at the specified coords, calls the CallbackFunction with the {{cBlockEntity}} parameter representing the block entity. The CallbackFunction has the following signature: <pre class=\"prettyprint lang-lua\">function Callback({{cBlockEntity|BlockEntity}})</pre> The function returns false if there is no block entity, or if there is, it returns the bool value that the callback has returned.",
 			},
 			DoWithBrewingstandAt =
 			{
@@ -872,7 +968,7 @@ function OnAllChunksAvailable()</pre> All return values from the callbacks are i
 				{
 					{
 						Name = "PlayerUUID",
-						Type = "string",
+						Type = "cUUID",
 					},
 					{
 						Name = "CallbackFunction",
@@ -978,7 +1074,7 @@ function OnAllChunksAvailable()</pre> All return values from the callbacks are i
 						Type = "boolean",
 					},
 				},
-				Notes = "Calls the specified callback for each block entity in the chunk. Returns true if all block entities in the chunk have been processed (including when there are zero block entities), or false if the callback has aborted the enumeration by returning true. The CallbackFunction has the following signature: <pre class=\"prettyprint lang-lua\">function Callback({{cBlockEntity|BlockEntity}})</pre> The callback should return false or no value to continue with the next block entity, or true to abort the enumeration. Use {{tolua}}.cast() to cast the Callback's BlockEntity parameter to the correct {{cBlockEntity}} descendant.",
+				Notes = "Calls the specified callback for each block entity in the chunk. Returns true if all block entities in the chunk have been processed (including when there are zero block entities), or false if the callback has aborted the enumeration by returning true. The CallbackFunction has the following signature: <pre class=\"prettyprint lang-lua\">function Callback({{cBlockEntity|BlockEntity}})</pre> The callback should return false or no value to continue with the next block entity, or true to abort the enumeration.",
 			},
 			ForEachBrewingstandInChunk =
 			{
@@ -1421,6 +1517,16 @@ function OnAllChunksAvailable()</pre> All return values from the callbacks are i
 				},
 				Notes = "Returns the block type and metadata for the block at the specified coords. The first value specifies if the block is in a valid loaded chunk, the other values are valid only if BlockValid is true.",
 			},
+			GetDataPath =
+			{
+				Returns =
+				{
+					{
+						Type = "boolean",
+					},
+				},
+				Notes = "Returns the path to the root of the world data.",
+			},
 			GetDefaultWeatherInterval =
 			{
 				Params =
@@ -1791,7 +1897,7 @@ function OnAllChunksAvailable()</pre> All return values from the callbacks are i
 				{
 					{
 						Name = "ShrapnelLevel",
-						Type = "Globals#eShrapnelLevel",
+						Type = "eShrapnelLevel",
 					},
 				},
 				Notes = "Returns the shrapnel level, representing the block types that are propelled outwards following an explosion. Based on this value and a random picker, blocks are selectively converted to physics entities (FallingSand) and flung outwards.",
@@ -2087,6 +2193,16 @@ function OnAllChunksAvailable()</pre> All return values from the callbacks are i
 					},
 				},
 				Notes = "Returns whether PVP is enabled in the world settings.",
+			},
+			IsSavingEnabled =
+			{
+				Returns =
+				{
+					{
+						Type = "boolean",
+					},
+				},
+				Notes = "Returns whether or not saving chunk data is enabled. If disabled, the world will keep dirty chunks in memory forever, and will simply regenerate non-dirty chunks that are unloaded.",
 			},
 			IsTrapdoorOpen =
 			{
@@ -2697,6 +2813,17 @@ function OnAllChunksAvailable()</pre> All return values from the callbacks are i
 				},
 				Notes = "Sets the blockticking to start at the specified block in the next tick.",
 			},
+			SetSavingEnabled =
+			{
+				Params =
+				{
+					{
+						Name = "SavingEnabled",
+						Type = "boolean",
+					},
+				},
+				Notes = "Sets whether saving chunk data is enabled. If disabled, dirty chunks will stay in memory forever, which may cause performance and stability issues.",
+			},
 			SetShouldUseChatPrefixes =
 			{
 				Params =
@@ -2801,7 +2928,7 @@ function OnAllChunksAvailable()</pre> All return values from the callbacks are i
 				{
 					{
 						Name = "ShrapnelLevel",
-						Type = "Globals#eShrapnelLevel",
+						Type = "eShrapnelLevel",
 					},
 				},
 				Notes = "Sets the Shrapnel level of the world.",
@@ -2888,33 +3015,56 @@ function OnAllChunksAvailable()</pre> All return values from the callbacks are i
 			},
 			SpawnBoat =
 			{
-				Params =
 				{
+					Params =
 					{
-						Name = "X",
-						Type = "number",
+						{
+							Name = "Position",
+							Type = "Vector3d",
+						},
+						{
+							Name = "Material",
+							Type = "cBoat#eMaterial",
+						},
 					},
+					Returns =
 					{
-						Name = "Y",
-						Type = "number",
+						{
+							Name = "EntityID",
+							Type = "number",
+						},
 					},
-					{
-						Name = "Z",
-						Type = "number",
-					},
-					{
-						Name = "Material",
-						Type = "cBoat#eMaterial",
-					},
+					Notes = "Spawns a {{cBoat|boat}} at the specific coordinates. Returns the EntityID of the new boat, or {{cEntity#INVALID_ID|cEntity#INVALID_ID}} if no boat was created.",
 				},
-				Returns =
 				{
+					Params =
 					{
-						Name = "EntityID",
-						Type = "number",
+						{
+							Name = "X",
+							Type = "number",
+						},
+						{
+							Name = "Y",
+							Type = "number",
+						},
+						{
+							Name = "Z",
+							Type = "number",
+						},
+						{
+							Name = "Material",
+							Type = "cBoat#eMaterial",
+						},
 					},
+					Returns =
+					{
+						{
+							Name = "EntityID",
+							Type = "number",
+						},
+					},
+					Notes = "Spawns a {{cBoat|boat}} at the specific coordinates. Returns the EntityID of the new boat, or {{cEntity#INVALID_ID|cEntity#INVALID_ID}} if no boat was created. (DEPRECATED, use vector-parametered version)",
 				},
-				Notes = "Spawns a {{cBoat|boat}} at the specific coordinates. Returns the EntityID of the new boat, or {{cEntity#INVALID_ID|cEntity#INVALID_ID}} if no boat was created.",
 			},
 			SpawnExperienceOrb =
 			{
@@ -2979,6 +3129,66 @@ function OnAllChunksAvailable()</pre> All return values from the callbacks are i
 					},
 				},
 				Notes = "Spawns a {{cFallingBlock|Falling Block}} entity at the specified coords with the given block type/meta. Returns the EntityID of the new falling block, or {{cEntity#INVALID_ID|cEntity#INVALID_ID}} if no falling block was created.",
+			},
+			SpawnItemPickup =
+			{
+				Params =
+				{
+					{
+						Name = "PosX",
+						Type = "number",
+					},
+					{
+						Name = "PosY",
+						Type = "number",
+					},
+					{
+						Name = "PosZ",
+						Type = "number",
+					},
+					{
+						Name = "Item",
+						Type = "cItem",
+					},
+					{
+						Name = "SpeedX",
+						Type = "number",
+						IsOptional = true,
+						Notes = "Speed along X coordinate to spawn with. Default is 0.",
+					},
+					{
+						Name = "SpeedY",
+						Type = "number",
+						IsOptional = true,
+						Notes = "Speed along Y coordinate to spawn with. Default is 0.",
+					},
+					{
+						Name = "SpeedZ",
+						Type = "number",
+						IsOptional = true,
+						Notes = "Speed along Z coordinate to spawn with. Default is 0.",
+					},
+					{
+						Name = "LifetimeTicks",
+						Type = "number",
+						IsOptional = true,
+						Notes = "Length of the pickups lifetime, in ticks. Default 5 minutes (6000 ticks)",
+					},
+					{
+						Name = "CanCombine",
+						Type = "boolean",
+						IsOptional = true,
+						Notes = "Whether this pickup is allowed to combine with other similar pickups.",
+					},
+				},
+				Returns =
+				{
+					{
+						Name = "EntityID",
+						Type = "number",
+					}
+				},
+				Notes = "Creates a single pickup entity of the given item at the given position with the given speed, and returns the entities unique ID."
 			},
 			SpawnItemPickups =
 			{
@@ -3131,37 +3341,64 @@ function OnAllChunksAvailable()</pre> All return values from the callbacks are i
 			},
 			SpawnPrimedTNT =
 			{
-				Params =
 				{
+					Params =
 					{
-						Name = "X",
-						Type = "number",
+						{
+							Name = "Position",
+							Type = "Vector3d",
+						},
+						{
+							Name = "FuseTicks",
+							Type = "number",
+						},
+						{
+							Name = "InitialVelocityCoeff",
+							Type = "number",
+						},
 					},
+					Returns =
 					{
-						Name = "Y",
-						Type = "number",
+						{
+							Name = "EntityID",
+							Type = "number",
+						},
 					},
-					{
-						Name = "Z",
-						Type = "number",
-					},
-					{
-						Name = "FuseTicks",
-						Type = "number",
-					},
-					{
-						Name = "InitialVelocityCoeff",
-						Type = "number",
-					},
+					Notes = "Spawns a {{cTNTEntity|primed TNT entity}} at the specified coords, with the given fuse ticks. The entity gets a random speed multiplied by the InitialVelocityCoeff, 1 being the default value. Returns the EntityID of the new spawned primed tnt, or {{cEntity#INVALID_ID|cEntity#INVALID_ID}} if no primed tnt was created.",
 				},
-				Returns =
 				{
+					Params =
 					{
-						Name = "EntityID",
-						Type = "number",
+						{
+							Name = "X",
+							Type = "number",
+						},
+						{
+							Name = "Y",
+							Type = "number",
+						},
+						{
+							Name = "Z",
+							Type = "number",
+						},
+						{
+							Name = "FuseTicks",
+							Type = "number",
+						},
+						{
+							Name = "InitialVelocityCoeff",
+							Type = "number",
+						},
 					},
+					Returns =
+					{
+						{
+							Name = "EntityID",
+							Type = "number",
+						},
+					},
+					Notes = "Spawns a {{cTNTEntity|primed TNT entity}} at the specified coords, with the given fuse ticks. The entity gets a random speed multiplied by the InitialVelocityCoeff, 1 being the default value. Returns the EntityID of the new spawned primed tnt, or {{cEntity#INVALID_ID|cEntity#INVALID_ID}} if no primed tnt was created. (DEPRECATED, use vector-parametered version)",
 				},
-				Notes = "Spawns a {{cTNTEntity|primed TNT entity}} at the specified coords, with the given fuse ticks. The entity gets a random speed multiplied by the InitialVelocityCoeff, 1 being the default value. Returns the EntityID of the new spawned primed tnt, or {{cEntity#INVALID_ID|cEntity#INVALID_ID}} if no primed tnt was created.",
 			},
 			TryGetHeight =
 			{
@@ -3264,53 +3501,77 @@ function OnAllChunksAvailable()</pre> All return values from the callbacks are i
 			},
 			WakeUpSimulators =
 			{
-				Params =
 				{
+					Params =
 					{
-						Name = "BlockX",
-						Type = "number",
+						{
+							Name = "Block",
+							Type = "Vector3i",
+						},
 					},
-					{
-						Name = "BlockY",
-						Type = "number",
-					},
-					{
-						Name = "BlockZ",
-						Type = "number",
-					},
+					Notes = "Wakes up the simulators for the specified block.",
 				},
-				Notes = "Wakes up the simulators for the specified block.",
+				{
+					Params =
+					{
+						{
+							Name = "BlockX",
+							Type = "number",
+						},
+						{
+							Name = "BlockY",
+							Type = "number",
+						},
+						{
+							Name = "BlockZ",
+							Type = "number",
+						},
+					},
+					Notes = "Wakes up the simulators for the specified block. (DEPRECATED, use vector-parametered version)",
+				},
 			},
 			WakeUpSimulatorsInArea =
 			{
-				Params =
 				{
+					Params =
 					{
-						Name = "MinBlockX",
-						Type = "number",
+						{
+							Name = "Area",
+							Type = "cCuboid",
+						},
 					},
-					{
-						Name = "MaxBlockX",
-						Type = "number",
-					},
-					{
-						Name = "MinBlockY",
-						Type = "number",
-					},
-					{
-						Name = "MaxBlockY",
-						Type = "number",
-					},
-					{
-						Name = "MinBlockZ",
-						Type = "number",
-					},
-					{
-						Name = "MaxBlockZ",
-						Type = "number",
-					},
+					Notes = "Wakes up the simulators for all the blocks in the specified area (edges inclusive).",
 				},
-				Notes = "Wakes up the simulators for all the blocks in the specified area (edges inclusive).",
+				{
+					Params =
+					{
+						{
+							Name = "MinBlockX",
+							Type = "number",
+						},
+						{
+							Name = "MaxBlockX",
+							Type = "number",
+						},
+						{
+							Name = "MinBlockY",
+							Type = "number",
+						},
+						{
+							Name = "MaxBlockY",
+							Type = "number",
+						},
+						{
+							Name = "MinBlockZ",
+							Type = "number",
+						},
+						{
+							Name = "MaxBlockZ",
+							Type = "number",
+						},
+					},
+					Notes = "Wakes up the simulators for all the blocks in the specified area (edges inclusive). (DEPRECATED, use vector-parametered version)",
+				},
 			},
 		},
 		AdditionalInfo =
@@ -3364,10 +3625,9 @@ World:ForEachEntity(
 			return;
 		end
 
-		-- Get the cMonster out of cEntity, now that we know the entity represents one.
-		local Monster = tolua.cast(a_Entity, "cMonster");
-		if (Monster:GetMobType() == mtSpider) then
-			Monster:TeleportToCoords(Monster:GetPosX(), Monster:GetPosY() + 100, Monster:GetPosZ());
+		-- Now that we know the entity represents a mob, we can use cMonster functions:
+		if (a_Entity:GetMobType() == mtSpider) then
+			a_Entity:TeleportToCoords(a_Entity:GetPosX(), a_Entity:GetPosY() + 100, a_Entity:GetPosZ());
 		end
 	end
 );

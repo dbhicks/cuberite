@@ -17,6 +17,7 @@ SET (SRCS
 	GhastFireballEntity.cpp
 	HangingEntity.cpp
 	ItemFrame.cpp
+	LeashKnot.cpp
 	Minecart.cpp
 	Painting.cpp
 	Pawn.cpp
@@ -45,6 +46,7 @@ SET (HDRS
 	GhastFireballEntity.h
 	HangingEntity.h
 	ItemFrame.h
+	LeashKnot.h
 	Minecart.h
 	Painting.h
 	Pawn.h
@@ -57,10 +59,6 @@ SET (HDRS
 	ThrownEnderPearlEntity.h
 	ThrownSnowballEntity.h
 	WitherSkullEntity.h)
-
-if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
-	set_source_files_properties(Entity.cpp PROPERTIES COMPILE_FLAGS "-Wno-error=global-constructors")
-endif()
 
 if(NOT MSVC)
 	add_library(Entities ${SRCS} ${HDRS})

@@ -128,7 +128,10 @@ public:
 		m_Noise(a_Seed),
 		m_MaxSize(a_MaxSize),
 		m_Density(a_Density),
-		m_Borders(a_OriginX - a_MaxSize, 0, a_OriginZ - a_MaxSize, a_OriginX + a_MaxSize, cChunkDef::Height - 1, a_OriginZ + a_MaxSize),
+		m_Borders(
+			{a_OriginX - a_MaxSize, 0, a_OriginZ - a_MaxSize},
+			{a_OriginX + a_MaxSize, cChunkDef::Height - 1, a_OriginZ + a_MaxSize}
+		),
 		m_Prefabs(a_Prefabs),
 		m_HeightGen(a_HeightGen)
 	{
@@ -381,7 +384,7 @@ cGridStructGen::cStructurePtr cVillageGen::CreateStructure(int a_GridX, int a_Gr
 	{
 		auto biome = Biomes[i];
 		availablePools.erase(std::remove_if(availablePools.begin(), availablePools.end(),
-			[biome](SharedPtr<cPrefabPiecePool> a_Pool)
+			[biome](std::shared_ptr<cVillagePiecePool> & a_Pool)
 			{
 				return !a_Pool->IsBiomeAllowed(biome);
 			}),

@@ -55,7 +55,7 @@ void cPawn::Tick(std::chrono::milliseconds a_Dt, cChunk & a_Chunk)
 	{
 		// Copies values to prevent pesky wrong accesses and erasures
 		cEntityEffect::eType EffectType = iter->first;
-		cEntityEffect * Effect = iter->second;
+		cEntityEffect * Effect = iter->second.get();
 
 		// Iterates (must be called before any possible erasure)
 		++iter;
@@ -80,49 +80,37 @@ void cPawn::Tick(std::chrono::milliseconds a_Dt, cChunk & a_Chunk)
 		Effect->OnTick(*this);
 	}
 
-	class Pusher : public cEntityCallback
-	{
-	public:
-		cEntity * m_Pusher;
-
-		Pusher(cEntity * a_Pusher) :
-			m_Pusher(a_Pusher)
-		{
-		}
-
-		virtual bool Item(cEntity * a_Entity) override
-		{
-			if (a_Entity->GetUniqueID() == m_Pusher->GetUniqueID())
-			{
-				return false;
-			}
-
-			// we only push other mobs, boats and minecarts
-			if ((a_Entity->GetEntityType() != etMonster) && (a_Entity->GetEntityType() != etMinecart) && (a_Entity->GetEntityType() != etBoat))
-			{
-				return false;
-			}
-
-			// do not push a boat / minecart you're sitting in
-			if (m_Pusher->IsAttachedTo(a_Entity))
-			{
-				return false;
-			}
-
-			Vector3d v3Delta = a_Entity->GetPosition() - m_Pusher->GetPosition();
-			v3Delta.y = 0.0;  // we only push sideways
-			v3Delta *= 1.0 / (v3Delta.Length() + 0.01);  // we push harder if we're close
-			// QUESTION: is there an additional multiplier for this? current shoving seems a bit weak
-
-			a_Entity->AddSpeed(v3Delta);
-			return false;
-		}
-	} Callback(this);
-
 	// Spectators cannot push entities around
-	if ((!IsPlayer()) || (!reinterpret_cast<cPlayer *>(this)->IsGameModeSpectator()))
+	if ((!IsPlayer()) || (!static_cast<cPlayer *>(this)->IsGameModeSpectator()))
 	{
-		m_World->ForEachEntityInBox(cBoundingBox(GetPosition(), GetWidth(), GetHeight()), Callback);
+		m_World->ForEachEntityInBox(cBoundingBox(GetPosition(), GetWidth(), GetHeight()), [=](cEntity & a_Entity)
+			{
+				if (a_Entity.GetUniqueID() == GetUniqueID())
+				{
+					return false;
+				}
+
+				// we only push other mobs, boats and minecarts
+				if ((a_Entity.GetEntityType() != etMonster) && (a_Entity.GetEntityType() != etMinecart) && (a_Entity.GetEntityType() != etBoat))
+				{
+					return false;
+				}
+
+				// do not push a boat / minecart you're sitting in
+				if (IsAttachedTo(&a_Entity))
+				{
+					return false;
+				}
+
+				Vector3d v3Delta = a_Entity.GetPosition() - GetPosition();
+				v3Delta.y = 0.0;  // we only push sideways
+				v3Delta *= 1.0 / (v3Delta.Length() + 0.01);  // we push harder if we're close
+				// QUESTION: is there an additional multiplier for this? current shoving seems a bit weak
+
+				a_Entity.AddSpeed(v3Delta);
+				return false;
+			}
+		);
 	}
 
 	super::Tick(a_Dt, a_Chunk);
@@ -151,6 +139,15 @@ void cPawn::KilledBy(TakeDamageInfo & a_TDI)
 bool cPawn::IsFireproof(void) const
 {
 	return super::IsFireproof() || HasEntityEffect(cEntityEffect::effFireResistance);
+}
+
+
+
+
+
+bool cPawn::IsInvisible() const
+{
+	return HasEntityEffect(cEntityEffect::effInvisibility);
 }
 
 
@@ -188,9 +185,17 @@ void cPawn::AddEntityEffect(cEntityEffect::eType a_EffectType, int a_Duration, s
 	}
 	a_Duration = static_cast<int>(a_Duration * a_DistanceModifier);
 
-	m_EntityEffects[a_EffectType] = cEntityEffect::CreateEntityEffect(a_EffectType, a_Duration, a_Intensity, a_DistanceModifier);
+	// If we already have the effect, we have to deactivate it or else it will act cumulatively
+	auto ExistingEffect = m_EntityEffects.find(a_EffectType);
+	if (ExistingEffect != m_EntityEffects.end())
+	{
+		ExistingEffect->second->OnDeactivate(*this);
+	}
+
+	auto Res = m_EntityEffects.emplace(a_EffectType, cEntityEffect::CreateEntityEffect(a_EffectType, a_Duration, a_Intensity, a_DistanceModifier));
 	m_World->BroadcastEntityEffect(*this, a_EffectType, a_Intensity, static_cast<short>(a_Duration));
-	m_EntityEffects[a_EffectType]->OnActivate(*this);
+	cEntityEffect * Effect = Res.first->second.get();
+	Effect->OnActivate(*this);
 }
 
 
@@ -200,9 +205,14 @@ void cPawn::AddEntityEffect(cEntityEffect::eType a_EffectType, int a_Duration, s
 void cPawn::RemoveEntityEffect(cEntityEffect::eType a_EffectType)
 {
 	m_World->BroadcastRemoveEntityEffect(*this, a_EffectType);
-	m_EntityEffects[a_EffectType]->OnDeactivate(*this);
-	delete m_EntityEffects[a_EffectType];
-	m_EntityEffects.erase(a_EffectType);
+	auto itr = m_EntityEffects.find(a_EffectType);
+	if (itr != m_EntityEffects.end())
+	{
+		// Erase from effect map before calling OnDeactivate to allow metadata broadcasts (e.g. for invisibility effect)
+		auto Effect = std::move(itr->second);
+		m_EntityEffects.erase(itr);
+		Effect->OnDeactivate(*this);
+	}
 }
 
 
@@ -459,16 +469,22 @@ void cPawn::StopEveryoneFromTargetingMe()
 
 std::map<cEntityEffect::eType, cEntityEffect *> cPawn::GetEntityEffects()
 {
-	return m_EntityEffects;
+	std::map<cEntityEffect::eType, cEntityEffect *> Effects;
+	for (auto & Effect : m_EntityEffects)
+	{
+		Effects.insert({ Effect.first, Effect.second.get() });
+	}
+	return Effects;
 }
 
 
 
 
 
-cEntityEffect *cPawn::GetEntityEffect(cEntityEffect::eType a_EffectType)
+cEntityEffect * cPawn::GetEntityEffect(cEntityEffect::eType a_EffectType)
 {
-	return m_EntityEffects.at(a_EffectType);
+	auto itr = m_EntityEffects.find(a_EffectType);
+	return (itr != m_EntityEffects.end()) ? itr->second.get() : nullptr;
 }
 
 

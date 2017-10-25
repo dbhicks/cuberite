@@ -82,11 +82,33 @@ cRoot::~cRoot()
 void cRoot::InputThread(cRoot & a_Params)
 {
 	cLogCommandOutputCallback Output;
+	AString Command;
 
 	while (a_Params.m_InputThreadRunFlag.test_and_set() && std::cin.good())
 	{
-		AString Command;
+		#ifndef _WIN32
+			timeval Timeout{ 0, 0 };
+			Timeout.tv_usec = 100 * 1000;  // 100 msec
+
+			fd_set ReadSet;
+			FD_ZERO(&ReadSet);
+			FD_SET(STDIN_FILENO, &ReadSet);
+
+			if (select(STDIN_FILENO + 1, &ReadSet, nullptr, nullptr, &Timeout) <= 0)
+			{
+				// Don't call getline because there's nothing to read
+				continue;
+			}
+		#endif
+
 		std::getline(std::cin, Command);
+
+		if (!a_Params.m_InputThreadRunFlag.test_and_set())
+		{
+			// Already shutting down, can't execute commands
+			break;
+		}
+
 		if (!Command.empty())
 		{
 			// Execute and clear command string when submitted
@@ -191,7 +213,7 @@ void cRoot::Start(std::unique_ptr<cSettingsRepositoryInterface> a_OverridesRepo)
 	m_BrewingRecipes.reset(new cBrewingRecipes());
 
 	LOGD("Loading worlds...");
-	LoadWorlds(*settingsRepo, IsNewIniFile);
+	LoadWorlds(dd, *settingsRepo, IsNewIniFile);
 
 	LOGD("Loading plugin manager...");
 	m_PluginManager = new cPluginManager(dd);
@@ -323,15 +345,7 @@ void cRoot::Start(std::unique_ptr<cSettingsRepositoryInterface> a_OverridesRepo)
 			m_InputThread.join();
 		}
 	#else
-		if (m_InputThread.get_id() != std::thread::id())
-		{
-			if (pthread_kill(m_InputThread.native_handle(), SIGKILL) != 0)
-			{
-				LOGWARN("Couldn't notify the input thread; the server will hang before shutdown!");
-				m_TerminateEventRaised = true;
-				m_InputThread.detach();
-			}
-		}
+		m_InputThread.join();
 	#endif
 
 	if (m_TerminateEventRaised)
@@ -352,22 +366,16 @@ void cRoot::Start(std::unique_ptr<cSettingsRepositoryInterface> a_OverridesRepo)
 void cRoot::StopServer()
 {
 	// Kick all players from the server with custom disconnect message
-	class cPlayerCallback : public cPlayerListCallback
-	{
-		AString m_ShutdownMessage;
-		virtual bool Item(cPlayer * a_Player)
+
+	bool SentDisconnect = false;
+	cRoot::Get()->ForEachPlayer([&](cPlayer & a_Player)
 		{
-			a_Player->GetClientHandlePtr()->Kick(m_ShutdownMessage);
-			m_HasSentDisconnect = true;
+			a_Player.GetClientHandlePtr()->Kick(m_Server->GetShutdownMessage());
+			SentDisconnect = true;
 			return false;
 		}
-	public:
-		bool m_HasSentDisconnect;
-		cPlayerCallback(AString a_ShutdownMessage) : m_ShutdownMessage(a_ShutdownMessage) { m_HasSentDisconnect = false; }
-	} PlayerCallback(m_Server->GetShutdownMessage());
-
-	cRoot::Get()->ForEachPlayer(PlayerCallback);
-	if (PlayerCallback.m_HasSentDisconnect)
+	);
+	if (SentDisconnect)
 	{
 		std::this_thread::sleep_for(std::chrono::seconds(1));
 	}
@@ -389,25 +397,38 @@ void cRoot::LoadGlobalSettings()
 
 
 
-void cRoot::LoadWorlds(cSettingsRepositoryInterface & a_Settings, bool a_IsNewIniFile)
+void cRoot::LoadWorlds(cDeadlockDetect & a_dd, cSettingsRepositoryInterface & a_Settings, bool a_IsNewIniFile)
 {
 	if (a_IsNewIniFile)
 	{
 		a_Settings.AddValue("Worlds", "DefaultWorld", "world");
 		a_Settings.AddValue("Worlds", "World", "world_nether");
 		a_Settings.AddValue("Worlds", "World", "world_the_end");
-		m_pDefaultWorld = new cWorld("world");
+		a_Settings.AddValue("WorldPaths", "world", "world");
+		a_Settings.AddValue("WorldPaths", "world_nether", "world_nether");
+		a_Settings.AddValue("WorldPaths", "world_the_end", "world_the_end");
+
+		AStringVector WorldNames{ "world", "world_nether", "world_the_end" };
+		m_pDefaultWorld = new cWorld("world", "world", a_dd, WorldNames);
 		m_WorldsByName["world"] = m_pDefaultWorld;
-		m_WorldsByName["world_nether"] = new cWorld("world_nether", dimNether, "world");
-		m_WorldsByName["world_the_end"] = new cWorld("world_the_end", dimEnd, "world");
+		m_WorldsByName["world_nether"] = new cWorld("world_nether", "world_nether", a_dd, WorldNames, dimNether, "world");
+		m_WorldsByName["world_the_end"] = new cWorld("world_the_end", "world_the_end", a_dd, WorldNames, dimEnd, "world");
 		return;
 	}
 
-	// First get the default world
-	AString DefaultWorldName = a_Settings.GetValueSet("Worlds", "DefaultWorld", "world");
-	m_pDefaultWorld = new cWorld(DefaultWorldName.c_str());
-	m_WorldsByName[ DefaultWorldName ] = m_pDefaultWorld;
+	// Build a list of all world names
 	auto Worlds = a_Settings.GetValues("Worlds");
+	AStringVector WorldNames(Worlds.size());
+	for (const auto & World : Worlds)
+	{
+		WorldNames.push_back(World.second);
+	}
+
+	// Get the default world
+	AString DefaultWorldName = a_Settings.GetValueSet("Worlds", "DefaultWorld", "world");
+	AString DefaultWorldPath = a_Settings.GetValueSet("WorldPaths", DefaultWorldName, DefaultWorldName);
+	m_pDefaultWorld = new cWorld(DefaultWorldName.c_str(), DefaultWorldPath.c_str(), a_dd, WorldNames);
+	m_WorldsByName[ DefaultWorldName ] = m_pDefaultWorld;
 
 	// Then load the other worlds
 	if (Worlds.size() <= 0)
@@ -453,9 +474,14 @@ void cRoot::LoadWorlds(cSettingsRepositoryInterface & a_Settings, bool a_IsNewIn
 		FoundAdditionalWorlds = true;
 		cWorld * NewWorld;
 		AString LowercaseName = StrToLower(WorldName);
+		AString WorldPath = a_Settings.GetValueSet("WorldPaths", WorldName, WorldName);
 		AString NetherAppend = "_nether";
 		AString EndAppend1 = "_the_end";
 		AString EndAppend2 = "_end";
+
+		// The default world is an overworld with no links
+		eDimension Dimension = dimOverworld;
+		AString LinkTo = "";
 
 		// if the world is called x_nether
 		if ((LowercaseName.size() > NetherAppend.size()) && (LowercaseName.substr(LowercaseName.size() - NetherAppend.size()) == NetherAppend))
@@ -464,12 +490,12 @@ void cRoot::LoadWorlds(cSettingsRepositoryInterface & a_Settings, bool a_IsNewIn
 			// otherwise, choose the default world as the linked world.
 			// As before, any ini settings will completely override this if an ini is already present.
 
-			AString LinkTo = WorldName.substr(0, WorldName.size() - NetherAppend.size());
+			LinkTo = WorldName.substr(0, WorldName.size() - NetherAppend.size());
 			if (GetWorld(LinkTo) == nullptr)
 			{
 				LinkTo = DefaultWorldName;
 			}
-			NewWorld = new cWorld(WorldName.c_str(), dimNether, LinkTo);
+			Dimension = dimNether;
 		}
 		// if the world is called x_the_end
 		else if ((LowercaseName.size() > EndAppend1.size()) && (LowercaseName.substr(LowercaseName.size() - EndAppend1.size()) == EndAppend1))
@@ -478,12 +504,12 @@ void cRoot::LoadWorlds(cSettingsRepositoryInterface & a_Settings, bool a_IsNewIn
 			// otherwise, choose the default world as the linked world.
 			// As before, any ini settings will completely override this if an ini is already present.
 
-			AString LinkTo = WorldName.substr(0, WorldName.size() - EndAppend1.size());
+			LinkTo = WorldName.substr(0, WorldName.size() - EndAppend1.size());
 			if (GetWorld(LinkTo) == nullptr)
 			{
 				LinkTo = DefaultWorldName;
 			}
-			NewWorld = new cWorld(WorldName.c_str(), dimEnd, LinkTo);
+			Dimension = dimEnd;
 		}
 		// if the world is called x_end
 		else if ((LowercaseName.size() > EndAppend2.size()) && (LowercaseName.substr(LowercaseName.size() - EndAppend2.size()) == EndAppend2))
@@ -492,17 +518,14 @@ void cRoot::LoadWorlds(cSettingsRepositoryInterface & a_Settings, bool a_IsNewIn
 			// otherwise, choose the default world as the linked world.
 			// As before, any ini settings will completely override this if an ini is already present.
 
-			AString LinkTo = WorldName.substr(0, WorldName.size() - EndAppend2.size());
+			LinkTo = WorldName.substr(0, WorldName.size() - EndAppend2.size());
 			if (GetWorld(LinkTo) == nullptr)
 			{
 				LinkTo = DefaultWorldName;
 			}
-			NewWorld = new cWorld(WorldName.c_str(), dimEnd, LinkTo);
+			Dimension = dimEnd;
 		}
-		else
-		{
-			NewWorld = new cWorld(WorldName.c_str());
-		}
+		NewWorld = new cWorld(WorldName.c_str(), WorldPath.c_str(), a_dd, WorldNames, Dimension, LinkTo);
 		m_WorldsByName[WorldName] = NewWorld;
 	}  // for i - Worlds
 
@@ -524,7 +547,7 @@ void cRoot::StartWorlds(cDeadlockDetect & a_DeadlockDetect)
 {
 	for (WorldMap::iterator itr = m_WorldsByName.begin(); itr != m_WorldsByName.end(); ++itr)
 	{
-		itr->second->Start(a_DeadlockDetect);
+		itr->second->Start();
 		itr->second->InitializeSpawn();
 		m_PluginManager->CallHookWorldStarted(*itr->second);
 	}
@@ -584,14 +607,13 @@ cWorld * cRoot::GetWorld(const AString & a_WorldName)
 
 
 
-bool cRoot::ForEachWorld(cWorldListCallback & a_Callback)
+bool cRoot::ForEachWorld(cWorldListCallback a_Callback)
 {
-	for (WorldMap::iterator itr = m_WorldsByName.begin(), itr2 = itr; itr != m_WorldsByName.end(); itr = itr2)
+	for (auto & World : m_WorldsByName)
 	{
-		++itr2;
-		if (itr->second != nullptr)
+		if (World.second != nullptr)
 		{
-			if (a_Callback.Item(itr->second))
+			if (a_Callback(*World.second))
 			{
 				return false;
 			}
@@ -676,7 +698,7 @@ void cRoot::KickUser(int a_ClientID, const AString & a_Reason)
 
 
 
-void cRoot::AuthenticateUser(int a_ClientID, const AString & a_Name, const AString & a_UUID, const Json::Value & a_Properties)
+void cRoot::AuthenticateUser(int a_ClientID, const AString & a_Name, const cUUID & a_UUID, const Json::Value & a_Properties)
 {
 	m_Server->AuthenticateUser(a_ClientID, a_Name, a_UUID, a_Properties);
 }
@@ -706,6 +728,20 @@ void cRoot::SaveAllChunks(void)
 		itr->second->QueueSaveAllChunks();
 	}
 }
+
+
+
+
+
+void cRoot::SetSavingEnabled(bool a_SavingEnabled)
+{
+	for (WorldMap::iterator itr = m_WorldsByName.begin(); itr != m_WorldsByName.end(); ++itr)
+	{
+		itr->second->SetSavingEnabled(a_SavingEnabled);
+	}
+}
+
+
 
 
 
@@ -750,7 +786,7 @@ void cRoot::BroadcastChat(const cCompositeChat & a_Message)
 
 
 
-bool cRoot::ForEachPlayer(cPlayerListCallback & a_Callback)
+bool cRoot::ForEachPlayer(cPlayerListCallback a_Callback)
 {
 	for (WorldMap::iterator itr = m_WorldsByName.begin(), itr2 = itr; itr != m_WorldsByName.end(); itr = itr2)
 	{
@@ -767,20 +803,22 @@ bool cRoot::ForEachPlayer(cPlayerListCallback & a_Callback)
 
 
 
-bool cRoot::FindAndDoWithPlayer(const AString & a_PlayerName, cPlayerListCallback & a_Callback)
+bool cRoot::FindAndDoWithPlayer(const AString & a_PlayerName, cPlayerListCallback a_Callback)
 {
-	class cCallback : public cPlayerListCallback
+	class cCallback
 	{
 		size_t        m_BestRating;
 		size_t        m_NameLength;
 		const AString m_PlayerName;
 
-		virtual bool Item (cPlayer * a_pPlayer)
+	public:
+
+		bool operator () (cPlayer & a_Player)
 		{
-			size_t Rating = RateCompareString (m_PlayerName, a_pPlayer->GetName());
+			size_t Rating = RateCompareString (m_PlayerName, a_Player.GetName());
 			if ((Rating > 0) && (Rating >= m_BestRating))
 			{
-				m_BestMatch = a_pPlayer->GetName();
+				m_BestMatch = a_Player.GetName();
 				if (Rating > m_BestRating)
 				{
 					m_NumMatches = 0;
@@ -795,7 +833,6 @@ bool cRoot::FindAndDoWithPlayer(const AString & a_PlayerName, cPlayerListCallbac
 			return false;
 		}
 
-	public:
 		cCallback (const AString & a_CBPlayerName) :
 			m_BestRating(0),
 			m_NameLength(a_CBPlayerName.length()),
@@ -820,7 +857,7 @@ bool cRoot::FindAndDoWithPlayer(const AString & a_PlayerName, cPlayerListCallbac
 
 
 
-bool cRoot::DoWithPlayerByUUID(const AString & a_PlayerUUID, cPlayerListCallback & a_Callback)
+bool cRoot::DoWithPlayerByUUID(const cUUID & a_PlayerUUID, cPlayerListCallback a_Callback)
 {
 	for (WorldMap::iterator itr = m_WorldsByName.begin(); itr !=  m_WorldsByName.end(); ++itr)
 	{
@@ -836,7 +873,7 @@ bool cRoot::DoWithPlayerByUUID(const AString & a_PlayerUUID, cPlayerListCallback
 
 
 
-bool cRoot::DoWithPlayer(const AString & a_PlayerName, cPlayerListCallback & a_Callback)
+bool cRoot::DoWithPlayer(const AString & a_PlayerName, cPlayerListCallback a_Callback)
 {
 	for (auto World : m_WorldsByName)
 	{
@@ -1028,25 +1065,11 @@ int cRoot::GetFurnaceFuelBurnTime(const cItem & a_Fuel)
 AStringVector cRoot::GetPlayerTabCompletionMultiWorld(const AString & a_Text)
 {
 	AStringVector Results;
-	class cWorldCallback : public cWorldListCallback
-	{
-	public:
-		cWorldCallback(AStringVector & a_Results, const AString & a_Search) :
-			m_Results(a_Results),
-			m_Search(a_Search)
+	ForEachWorld([&](cWorld & a_World)
 		{
-		}
-
-		virtual bool Item(cWorld * a_World) override
-		{
-			a_World->TabCompleteUserName(m_Search, m_Results);
+			a_World.TabCompleteUserName(a_Text, Results);
 			return false;
 		}
-	private:
-		AStringVector & m_Results;
-		const AString & m_Search;
-	} WC(Results, a_Text);
-
-	Get()->ForEachWorld(WC);
+	);
 	return Results;
 }

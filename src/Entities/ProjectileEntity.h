@@ -46,13 +46,13 @@ public:
 	cProjectileEntity(eKind a_Kind, cEntity * a_Creator, double a_X, double a_Y, double a_Z, double a_Width, double a_Height);
 	cProjectileEntity(eKind a_Kind, cEntity * a_Creator, const Vector3d & a_Pos, const Vector3d & a_Speed, double a_Width, double a_Height);
 
-	static cProjectileEntity * Create(eKind a_Kind, cEntity * a_Creator, double a_X, double a_Y, double a_Z, const cItem * a_Item, const Vector3d * a_Speed = nullptr);
+	static std::unique_ptr<cProjectileEntity> Create(eKind a_Kind, cEntity * a_Creator, double a_X, double a_Y, double a_Z, const cItem * a_Item, const Vector3d * a_Speed = nullptr);
 
 	/** Called by the physics blocktracer when the entity hits a solid block, the hit position and the face hit (BLOCK_FACE_) is given */
-	virtual void OnHitSolidBlock(const Vector3d & a_HitPos, eBlockFace a_HitFace);
+	virtual void OnHitSolidBlock(Vector3d a_HitPos, eBlockFace a_HitFace);
 
 	/** Called by the physics blocktracer when the entity hits another entity */
-	virtual void OnHitEntity(cEntity & a_EntityHit, const Vector3d & a_HitPos);
+	virtual void OnHitEntity(cEntity & a_EntityHit, Vector3d a_HitPos);
 
 	/** Called by Chunk when the projectile is eligible for player collection */
 	virtual void CollectedBy(cPlayer & a_Dest);

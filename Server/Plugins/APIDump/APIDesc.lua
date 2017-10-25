@@ -71,1938 +71,6 @@ return
 		},
 		--]]
 
-		cBlockArea =
-		{
-			Desc = [[
-				This class is used when multiple adjacent blocks are to be manipulated. Because of chunking
-				and multithreading, manipulating single blocks using {{cWorld|cWorld:SetBlock}}() is a rather
-				time-consuming operation (locks for exclusive access need to be obtained, chunk lookup is done
-				for each block), so whenever you need to manipulate multiple adjacent blocks, it's better to wrap
-				the operation into a cBlockArea access. cBlockArea is capable of reading / writing across chunk
-				boundaries, has no chunk lookups for get and set operations and is not subject to multithreading
-				locking (because it is not shared among threads).</p>
-				<p>
-				cBlockArea remembers its origin (MinX, MinY, MinZ coords in the Read() call) and therefore supports
-				absolute as well as relative get / set operations. Despite that, the contents of a cBlockArea can
-				be written back into the world at any coords.</p>
-				<p>
-				cBlockArea can hold any combination of the following datatypes:<ul>
-					<li>block types</li>
-					<li>block metas</li>
-					<li>blocklight</li>
-					<li>skylight</li>
-				</ul>
-				Read() and Write() functions have parameters that tell the class which datatypes to read / write.
-				Note that a datatype that has not been read cannot be written (FIXME).</p>
-				<p>
-				Typical usage:<ul>
-					<li>Create cBlockArea object</li>
-					<li>Read an area from the world / load from file / create anew</li>
-					<li>Modify blocks inside cBlockArea</li>
-					<li>Write the area back to a world / save to file</li>
-				</ul></p>
-			]],
-			Functions =
-			{
-				Clear =
-				{
-					Notes = "Clears the object, resets it to zero size",
-				},
-				constructor =
-				{
-					Returns =
-					{
-						{
-							Type = "cBlockArea",
-						},
-					},
-					Notes = "Creates a new empty cBlockArea object",
-				},
-				CopyFrom =
-				{
-					Params =
-					{
-						{
-							Name = "BlockAreaSrc",
-							Type = "cBlockArea",
-						},
-					},
-					Notes = "Copies contents from BlockAreaSrc into self",
-				},
-				CopyTo =
-				{
-					Params =
-					{
-						{
-							Name = "BlockAreaDst",
-							Type = "cBlockArea",
-						},
-					},
-					Notes = "Copies contents from self into BlockAreaDst.",
-				},
-				CountNonAirBlocks =
-				{
-					Returns =
-					{
-						{
-							Type = "number",
-						},
-					},
-					Notes = "Returns the count of blocks that are not air. Returns 0 if blocktypes not available. Block metas are ignored (if present, air with any meta is still considered air).",
-				},
-				CountSpecificBlocks =
-				{
-					{
-						Params =
-						{
-							{
-								Name = "BlockType",
-								Type = "number",
-							},
-						},
-						Returns =
-						{
-							{
-								Type = "number",
-							},
-						},
-						Notes = "Counts the number of occurences of the specified blocktype contained in the area.",
-					},
-					{
-						Params =
-						{
-							{
-								Name = "BlockType",
-								Type = "number",
-							},
-							{
-								Name = "BlockMeta",
-								Type = "number",
-							},
-						},
-						Returns =
-						{
-							{
-								Type = "number",
-							},
-						},
-						Notes = "Counts the number of occurrences of the specified blocktype + blockmeta combination contained in the area.",
-					},
-				},
-				Create =
-				{
-					{
-						Params =
-						{
-							{
-								Name = "SizeX",
-								Type = "number",
-							},
-							{
-								Name = "SizeY",
-								Type = "number",
-							},
-							{
-								Name = "SizeZ",
-								Type = "number",
-							},
-						},
-						Notes = "Initializes this BlockArea to an empty area of the specified size and origin of {0, 0, 0}. Datatypes are set to baTypes + baMetas. Any previous contents are lost.",
-					},
-					{
-						Params =
-						{
-							{
-								Name = "SizeX",
-								Type = "number",
-							},
-							{
-								Name = "SizeY",
-								Type = "number",
-							},
-							{
-								Name = "SizeZ",
-								Type = "number",
-							},
-							{
-								Name = "DataTypes",
-								Type = "string",
-							},
-						},
-						Notes = "Initializes this BlockArea to an empty area of the specified size and origin of {0, 0, 0}. Any previous contents are lost.",
-					},
-					{
-						Params =
-						{
-							{
-								Name = "Size",
-								Type = "Vector3i",
-							},
-						},
-						Notes = "Creates a new area of the specified size. Datatypes are set to baTypes + baMetas. Origin is set to all zeroes. BlockTypes are set to air, block metas to zero, blocklights to zero and skylights to full light.",
-					},
-					{
-						Params =
-						{
-							{
-								Name = "Size",
-								Type = "Vector3i",
-							},
-							{
-								Name = "DataTypes",
-								Type = "string",
-							},
-						},
-						Notes = "Creates a new area of the specified size and contents. Origin is set to all zeroes. BlockTypes are set to air, block metas to zero, blocklights to zero and skylights to full light.",
-					},
-				},
-				Crop =
-				{
-					Params =
-					{
-						{
-							Name = "AddMinX",
-							Type = "number",
-						},
-						{
-							Name = "SubMaxX",
-							Type = "number",
-						},
-						{
-							Name = "AddMinY",
-							Type = "number",
-						},
-						{
-							Name = "SubMaxY",
-							Type = "number",
-						},
-						{
-							Name = "AddMinZ",
-							Type = "number",
-						},
-						{
-							Name = "SubMaxZ",
-							Type = "number",
-						},
-					},
-					Notes = "Crops the specified number of blocks from each border. Modifies the size of this blockarea object.",
-				},
-				DumpToRawFile =
-				{
-					Params =
-					{
-						{
-							Name = "FileName",
-							Type = "string",
-						},
-					},
-					Notes = "Dumps the raw data into a file. For debugging purposes only.",
-				},
-				Expand =
-				{
-					Params =
-					{
-						{
-							Name = "SubMinX",
-							Type = "number",
-						},
-						{
-							Name = "AddMaxX",
-							Type = "number",
-						},
-						{
-							Name = "SubMinY",
-							Type = "number",
-						},
-						{
-							Name = "AddMaxY",
-							Type = "number",
-						},
-						{
-							Name = "SubMinZ",
-							Type = "number",
-						},
-						{
-							Name = "AddMaxZ",
-							Type = "number",
-						},
-					},
-					Notes = "Expands the specified number of blocks from each border. Modifies the size of this blockarea object. New blocks created with this operation are filled with zeroes.",
-				},
-				Fill =
-				{
-					Params =
-					{
-						{
-							Name = "DataTypes",
-							Type = "string",
-						},
-						{
-							Name = "BlockType",
-							Type = "number",
-						},
-						{
-							Name = "BlockMeta",
-							Type = "number",
-							IsOptional = true,
-						},
-						{
-							Name = "BlockLight",
-							Type = "number",
-							IsOptional = true,
-						},
-						{
-							Name = "BlockSkyLight",
-							Type = "number",
-							IsOptional = true,
-						},
-					},
-					Notes = "Fills the entire block area with the same values, specified. Uses the DataTypes param to determine which content types are modified.",
-				},
-				FillRelCuboid =
-				{
-					{
-						Params =
-						{
-							{
-								Name = "RelCuboid",
-								Type = "cCuboid",
-							},
-							{
-								Name = "DataTypes",
-								Type = "string",
-							},
-							{
-								Name = "BlockType",
-								Type = "number",
-							},
-							{
-								Name = "BlockMeta",
-								Type = "number",
-								IsOptional = true,
-							},
-							{
-								Name = "BlockLight",
-								Type = "number",
-								IsOptional = true,
-							},
-							{
-								Name = "BlockSkyLight",
-								Type = "number",
-								IsOptional = true,
-							},
-						},
-						Notes = "Fills the specified cuboid (in relative coords) with the same values (like Fill() ).",
-					},
-					{
-						Params =
-						{
-							{
-								Name = "MinRelX",
-								Type = "number",
-							},
-							{
-								Name = "MaxRelX",
-								Type = "number",
-							},
-							{
-								Name = "MinRelY",
-								Type = "number",
-							},
-							{
-								Name = "MaxRelY",
-								Type = "number",
-							},
-							{
-								Name = "MinRelZ",
-								Type = "number",
-							},
-							{
-								Name = "MaxRelZ",
-								Type = "number",
-							},
-							{
-								Name = "DataTypes",
-								Type = "string",
-							},
-							{
-								Name = "BlockType",
-								Type = "number",
-							},
-							{
-								Name = "BlockMeta",
-								Type = "number",
-								IsOptional = true,
-							},
-							{
-								Name = "BlockLight",
-								Type = "number",
-								IsOptional = true,
-							},
-							{
-								Name = "BlockSkyLight",
-								Type = "number",
-								IsOptional = true,
-							},
-						},
-						Notes = "Fills the specified cuboid with the same values (like Fill() ).",
-					},
-				},
-				GetBlockLight =
-				{
-					Params =
-					{
-						{
-							Name = "BlockX",
-							Type = "number",
-						},
-						{
-							Name = "BlockY",
-							Type = "number",
-						},
-						{
-							Name = "BlockZ",
-							Type = "number",
-						},
-					},
-					Returns =
-					{
-						{
-							Name = "NIBBLETYPE",
-							Type = "number",
-						},
-					},
-					Notes = "Returns the blocklight at the specified absolute coords",
-				},
-				GetBlockMeta =
-				{
-					Params =
-					{
-						{
-							Name = "BlockX",
-							Type = "number",
-						},
-						{
-							Name = "BlockY",
-							Type = "number",
-						},
-						{
-							Name = "BlockZ",
-							Type = "number",
-						},
-					},
-					Returns =
-					{
-						{
-							Name = "NIBBLETYPE",
-							Type = "number",
-						},
-					},
-					Notes = "Returns the block meta at the specified absolute coords",
-				},
-				GetBlockSkyLight =
-				{
-					Params =
-					{
-						{
-							Name = "BlockX",
-							Type = "number",
-						},
-						{
-							Name = "BlockY",
-							Type = "number",
-						},
-						{
-							Name = "BlockZ",
-							Type = "number",
-						},
-					},
-					Returns =
-					{
-						{
-							Name = "NIBBLETYPE",
-							Type = "number",
-						},
-					},
-					Notes = "Returns the skylight at the specified absolute coords",
-				},
-				GetBlockType =
-				{
-					Params =
-					{
-						{
-							Name = "BlockX",
-							Type = "number",
-						},
-						{
-							Name = "BlockY",
-							Type = "number",
-						},
-						{
-							Name = "BlockZ",
-							Type = "number",
-						},
-					},
-					Returns =
-					{
-						{
-							Name = "BLOCKTYPE",
-							Type = "number",
-						},
-					},
-					Notes = "Returns the block type at the specified absolute coords",
-				},
-				GetBlockTypeMeta =
-				{
-					Params =
-					{
-						{
-							Name = "BlockX",
-							Type = "number",
-						},
-						{
-							Name = "BlockY",
-							Type = "number",
-						},
-						{
-							Name = "BlockZ",
-							Type = "number",
-						},
-					},
-					Returns =
-					{
-						{
-							Name = "BLOCKTYPE",
-							Type = "number",
-						},
-						{
-							Name = "NIBBLETYPE",
-							Type = "number",
-						},
-					},
-					Notes = "Returns the block type and meta at the specified absolute coords",
-				},
-				GetCoordRange =
-				{
-					Returns =
-					{
-						{
-							Name = "MaxX",
-							Type = "number",
-						},
-						{
-							Name = "MaxY",
-							Type = "number",
-						},
-						{
-							Name = "MaxZ",
-							Type = "number",
-						},
-					},
-					Notes = "Returns the maximum relative coords in all 3 axes. See also GetSize().",
-				},
-				GetDataTypes =
-				{
-					Returns =
-					{
-						{
-							Type = "number",
-						},
-					},
-					Notes = "Returns the mask of datatypes that the object is currently holding",
-				},
-				GetNonAirCropRelCoords =
-				{
-					Params =
-					{
-						{
-							Name = "IgnoredBlockType",
-							Type = "number",
-							IsOptional = true,
-						},
-					},
-					Returns =
-					{
-						{
-							Name = "MinRelX",
-							Type = "number",
-						},
-						{
-							Name = "MinRelY",
-							Type = "number",
-						},
-						{
-							Name = "MinRelZ",
-							Type = "number",
-						},
-						{
-							Name = "MaxRelX",
-							Type = "number",
-						},
-						{
-							Name = "MaxRelY",
-							Type = "number",
-						},
-						{
-							Name = "MaxRelZ",
-							Type = "number",
-						},
-					},
-					Notes = "Returns the minimum and maximum coords in each direction for the first block in each direction of type different to IgnoredBlockType (E_BLOCK_AIR by default). If there are no non-ignored blocks within the area, or blocktypes are not present, the returned values are reverse-ranges (MinX <- m_RangeX, MaxX <- 0 etc.). IgnoreBlockType defaults to air.",
-				},
-				GetOrigin =
-				{
-					Returns =
-					{
-						{
-							Name = "OriginX",
-							Type = "number",
-						},
-						{
-							Name = "OriginY",
-							Type = "number",
-						},
-						{
-							Name = "OriginZ",
-							Type = "number",
-						},
-					},
-					Notes = "Returns the origin coords of where the area was read from.",
-				},
-				GetOriginX =
-				{
-					Returns =
-					{
-						{
-							Type = "number",
-						},
-					},
-					Notes = "Returns the origin x-coord",
-				},
-				GetOriginY =
-				{
-					Returns =
-					{
-						{
-							Type = "number",
-						},
-					},
-					Notes = "Returns the origin y-coord",
-				},
-				GetOriginZ =
-				{
-					Returns =
-					{
-						{
-							Type = "number",
-						},
-					},
-					Notes = "Returns the origin z-coord",
-				},
-				GetRelBlockLight =
-				{
-					Params =
-					{
-						{
-							Name = "RelBlockX",
-							Type = "number",
-						},
-						{
-							Name = "RelBlockY",
-							Type = "number",
-						},
-						{
-							Name = "RelBlockZ",
-							Type = "number",
-						},
-					},
-					Returns =
-					{
-						{
-							Name = "NIBBLETYPE",
-							Type = "number",
-						},
-					},
-					Notes = "Returns the blocklight at the specified relative coords",
-				},
-				GetRelBlockMeta =
-				{
-					Params =
-					{
-						{
-							Name = "RelBlockX",
-							Type = "number",
-						},
-						{
-							Name = "RelBlockY",
-							Type = "number",
-						},
-						{
-							Name = "RelBlockZ",
-							Type = "number",
-						},
-					},
-					Returns =
-					{
-						{
-							Name = "NIBBLETYPE",
-							Type = "number",
-						},
-					},
-					Notes = "Returns the block meta at the specified relative coords",
-				},
-				GetRelBlockSkyLight =
-				{
-					Params =
-					{
-						{
-							Name = "RelBlockX",
-							Type = "number",
-						},
-						{
-							Name = "RelBlockY",
-							Type = "number",
-						},
-						{
-							Name = "RelBlockZ",
-							Type = "number",
-						},
-					},
-					Returns =
-					{
-						{
-							Name = "NIBBLETYPE",
-							Type = "number",
-						},
-					},
-					Notes = "Returns the skylight at the specified relative coords",
-				},
-				GetRelBlockType =
-				{
-					Params =
-					{
-						{
-							Name = "RelBlockX",
-							Type = "number",
-						},
-						{
-							Name = "RelBlockY",
-							Type = "number",
-						},
-						{
-							Name = "RelBlockZ",
-							Type = "number",
-						},
-					},
-					Returns =
-					{
-						{
-							Name = "BLOCKTYPE",
-							Type = "number",
-						},
-					},
-					Notes = "Returns the block type at the specified relative coords",
-				},
-				GetRelBlockTypeMeta =
-				{
-					Params =
-					{
-						{
-							Name = "RelBlockX",
-							Type = "number",
-						},
-						{
-							Name = "RelBlockY",
-							Type = "number",
-						},
-						{
-							Name = "RelBlockZ",
-							Type = "number",
-						},
-					},
-					Returns =
-					{
-						{
-							Name = "BLOCKTYPE",
-							Type = "number",
-						},
-						{
-							Name = "NIBBLETYPE",
-							Type = "number",
-						},
-					},
-					Notes = "Returns the block type and meta at the specified relative coords",
-				},
-				GetSize =
-				{
-					Returns =
-					{
-						{
-							Name = "SizeX",
-							Type = "number",
-						},
-						{
-							Name = "SizeY",
-							Type = "number",
-						},
-						{
-							Name = "SizeZ",
-							Type = "number",
-						},
-					},
-					Notes = "Returns the size of the area in all 3 axes. See also GetCoordRange().",
-				},
-				GetSizeX =
-				{
-					Returns =
-					{
-						{
-							Type = "number",
-						},
-					},
-					Notes = "Returns the size of the held data in the x-axis",
-				},
-				GetSizeY =
-				{
-					Returns =
-					{
-						{
-							Type = "number",
-						},
-					},
-					Notes = "Returns the size of the held data in the y-axis",
-				},
-				GetSizeZ =
-				{
-					Returns =
-					{
-						{
-							Type = "number",
-						},
-					},
-					Notes = "Returns the size of the held data in the z-axis",
-				},
-				GetVolume =
-				{
-					Returns =
-					{
-						{
-							Type = "number",
-						},
-					},
-					Notes = "Returns the volume of the area - the total number of blocks stored within.",
-				},
-				GetWEOffset =
-				{
-					Returns =
-					{
-						{
-							Type = "Vector3i",
-						},
-					},
-					Notes = "Returns the WE offset, a data value sometimes stored in the schematic files. Cuberite doesn't use this value, but provides access to it using this method. The default is {0, 0, 0}.",
-				},
-				HasBlockLights =
-				{
-					Returns =
-					{
-						{
-							Type = "boolean",
-						},
-					},
-					Notes = "Returns true if current datatypes include blocklight",
-				},
-				HasBlockMetas =
-				{
-					Returns =
-					{
-						{
-							Type = "boolean",
-						},
-					},
-					Notes = "Returns true if current datatypes include block metas",
-				},
-				HasBlockSkyLights =
-				{
-					Returns =
-					{
-						{
-							Type = "boolean",
-						},
-					},
-					Notes = "Returns true if current datatypes include skylight",
-				},
-				HasBlockTypes =
-				{
-					Returns =
-					{
-						{
-							Type = "boolean",
-						},
-					},
-					Notes = "Returns true if current datatypes include block types",
-				},
-				LoadFromSchematicFile =
-				{
-					Params =
-					{
-						{
-							Name = "FileName",
-							Type = "string",
-						},
-					},
-					Returns =
-					{
-						{ Type = "boolean" },
-					},
-					Notes = "Clears current content and loads new content from the specified schematic file. Returns true if successful. Returns false and logs error if unsuccessful, old content is preserved in such a case.",
-				},
-				LoadFromSchematicString =
-				{
-					Params =
-					{
-						{
-							Name = "SchematicData",
-							Type = "string",
-						},
-					},
-					Returns =
-					{
-						{ Type = "boolean" },
-					},
-					Notes = "Clears current content and loads new content from the specified string (assumed to contain .schematic data). Returns true if successful. Returns false and logs error if unsuccessful, old content is preserved in such a case.",
-				},
-				Merge =
-				{
-					{
-						Params =
-						{
-							{
-								Name = "BlockAreaSrc",
-								Type = "cBlockArea",
-							},
-							{
-								Name = "RelMinCoords",
-								Type = "number",
-							},
-							{
-								Name = "Strategy",
-								Type = "string",
-							},
-						},
-						Notes = "Merges BlockAreaSrc into this object at the specified relative coords, using the specified strategy",
-					},
-					{
-						Params =
-						{
-							{
-								Name = "BlockAreaSrc",
-								Type = "cBlockArea",
-							},
-							{
-								Name = "RelX",
-								Type = "number",
-							},
-							{
-								Name = "RelY",
-								Type = "number",
-							},
-							{
-								Name = "RelZ",
-								Type = "number",
-							},
-							{
-								Name = "Strategy",
-								Type = "string",
-							},
-						},
-						Notes = "Merges BlockAreaSrc into this object at the specified relative coords, using the specified strategy",
-					},
-				},
-				MirrorXY =
-				{
-					Notes = "Mirrors this block area around the XY plane. Modifies blocks' metas (if present) to match (i. e. furnaces facing the opposite direction).",
-				},
-				MirrorXYNoMeta =
-				{
-					Notes = "Mirrors this block area around the XY plane. Doesn't modify blocks' metas.",
-				},
-				MirrorXZ =
-				{
-					Notes = "Mirrors this block area around the XZ plane. Modifies blocks' metas (if present)",
-				},
-				MirrorXZNoMeta =
-				{
-					Notes = "Mirrors this block area around the XZ plane. Doesn't modify blocks' metas.",
-				},
-				MirrorYZ =
-				{
-					Notes = "Mirrors this block area around the YZ plane. Modifies blocks' metas (if present)",
-				},
-				MirrorYZNoMeta =
-				{
-					Notes = "Mirrors this block area around the YZ plane. Doesn't modify blocks' metas.",
-				},
-				Read =
-				{
-					{
-						Params =
-						{
-							{
-								Name = "World",
-								Type = "cWorld",
-							},
-							{
-								Name = "Cuboid",
-								Type = "cCuboid",
-							},
-						},
-						Returns =
-						{
-							{
-								Name = "IsSuccess",
-								Type = "boolean",
-							},
-						},
-						Notes = "Reads the area from World, returns true if successful. baTypes and baMetas are read.",
-					},
-					{
-						Params =
-						{
-							{
-								Name = "World",
-								Type = "cWorld",
-							},
-							{
-								Name = "Cuboid",
-								Type = "cCuboid",
-							},
-							{
-								Name = "DataTypes",
-								Type = "number",
-							},
-						},
-						Returns =
-						{
-							{
-								Name = "IsSuccess",
-								Type = "boolean",
-							},
-						},
-						Notes = "Reads the area from World, returns true if successful. DataTypes is the sum of baXXX datatypes to be read",
-					},
-					{
-						Params =
-						{
-							{
-								Name = "World",
-								Type = "cWorld",
-							},
-							{
-								Name = "Point1",
-								Type = "Vector3i",
-							},
-							{
-								Name = "Point2",
-								Type = "Vector3i",
-							},
-						},
-						Returns =
-						{
-							{
-								Name = "IsSuccess",
-								Type = "boolean",
-							},
-						},
-						Notes = "Reads the area from World, returns true if successful. baTypes and baMetas are read.",
-					},
-					{
-						Params =
-						{
-							{
-								Name = "World",
-								Type = "cWorld",
-							},
-							{
-								Name = "Point1",
-								Type = "Vector3i",
-							},
-							{
-								Name = "Point2",
-								Type = "Vector3i",
-							},
-							{
-								Name = "DataTypes",
-								Type = "number",
-							},
-						},
-						Returns =
-						{
-							{
-								Name = "IsSuccess",
-								Type = "boolean",
-							},
-						},
-						Notes = "Reads the area from World, returns true if successful. DataTypes is a sum of baXXX datatypes to be read.",
-					},
-					{
-						Params =
-						{
-							{
-								Name = "World",
-								Type = "cWorld",
-							},
-							{
-								Name = "MinX",
-								Type = "number",
-							},
-							{
-								Name = "MaxX",
-								Type = "number",
-							},
-							{
-								Name = "MinY",
-								Type = "number",
-							},
-							{
-								Name = "MaxY",
-								Type = "number",
-							},
-							{
-								Name = "MinZ",
-								Type = "number",
-							},
-							{
-								Name = "MaxZ",
-								Type = "number",
-							},
-						},
-						Returns =
-						{
-							{
-								Type = "boolean",
-							},
-						},
-						Notes = "Reads the area from World, returns true if successful. baTypes and baMetas are read.",
-					},
-					{
-						Params =
-						{
-							{
-								Name = "World",
-								Type = "cWorld",
-							},
-							{
-								Name = "MinX",
-								Type = "number",
-							},
-							{
-								Name = "MaxX",
-								Type = "number",
-							},
-							{
-								Name = "MinY",
-								Type = "number",
-							},
-							{
-								Name = "MaxY",
-								Type = "number",
-							},
-							{
-								Name = "MinZ",
-								Type = "number",
-							},
-							{
-								Name = "MaxZ",
-								Type = "number",
-							},
-							{
-								Name = "DataTypes",
-								Type = "number",
-							},
-						},
-						Returns =
-						{
-							{
-								Type = "boolean",
-							},
-						},
-						Notes = "Reads the area from World, returns true if successful. DataTypes is a sum of baXXX datatypes to read.",
-					},
-				},
-				RelLine =
-				{
-					{
-						Params =
-						{
-							{
-								Name = "RelPoint1",
-								Type = "Vector3i",
-							},
-							{
-								Name = "RelPoint2",
-								Type = "Vector3i",
-							},
-							{
-								Name = "DataTypes",
-								Type = "number",
-							},
-							{
-								Name = "BlockType",
-								Type = "number",
-							},
-							{
-								Name = "BlockMeta",
-								Type = "number",
-								IsOptional = true,
-							},
-							{
-								Name = "BlockLight",
-								Type = "number",
-								IsOptional = true,
-							},
-							{
-								Name = "BlockSkyLight",
-								Type = "number",
-								IsOptional = true,
-							},
-						},
-						Notes = "Draws a line between the two specified points. Sets only datatypes specified by DataTypes (baXXX constants).",
-					},
-					{
-						Params =
-						{
-							{
-								Name = "RelX1",
-								Type = "number",
-							},
-							{
-								Name = "RelY1",
-								Type = "number",
-							},
-							{
-								Name = "RelZ1",
-								Type = "number",
-							},
-							{
-								Name = "RelX2",
-								Type = "number",
-							},
-							{
-								Name = "RelY2",
-								Type = "number",
-							},
-							{
-								Name = "RelZ2",
-								Type = "number",
-							},
-							{
-								Name = "DataTypes",
-								Type = "string",
-							},
-							{
-								Name = "BlockType",
-								Type = "number",
-							},
-							{
-								Name = "BlockMeta",
-								Type = "number",
-								IsOptional = true,
-							},
-							{
-								Name = "BlockLight",
-								Type = "number",
-								IsOptional = true,
-							},
-							{
-								Name = "BlockSkyLight",
-								Type = "number",
-								IsOptional = true,
-							},
-						},
-						Notes = "Draws a line between the two specified points. Sets only datatypes specified by DataTypes (baXXX constants).",
-					},
-				},
-				RotateCCW =
-				{
-					Notes = "Rotates the block area around the Y axis, counter-clockwise (east -> north). Modifies blocks' metas (if present) to match.",
-				},
-				RotateCCWNoMeta =
-				{
-					Notes = "Rotates the block area around the Y axis, counter-clockwise (east -> north). Doesn't modify blocks' metas.",
-				},
-				RotateCW =
-				{
-					Notes = "Rotates the block area around the Y axis, clockwise (north -> east). Modifies blocks' metas (if present) to match.",
-				},
-				RotateCWNoMeta =
-				{
-					Notes = "Rotates the block area around the Y axis, clockwise (north -> east). Doesn't modify blocks' metas.",
-				},
-				SaveToSchematicFile =
-				{
-					Params =
-					{
-						{
-							Name = "FileName",
-							Type = "string",
-						},
-					},
-					Returns =
-					{
-						{
-							Type = "boolean",
-						},
-					},
-					Notes = "Saves the current contents to a schematic file. Returns true if successful.",
-				},
-				SaveToSchematicString =
-				{
-					Returns =
-					{
-						{
-							Type = "string",
-						},
-					},
-					Notes = "Saves the current contents to a string (in a .schematic file format). Returns the data if successful, nil if failed.",
-				},
-				SetBlockLight =
-				{
-					Params =
-					{
-						{
-							Name = "BlockX",
-							Type = "number",
-						},
-						{
-							Name = "BlockY",
-							Type = "number",
-						},
-						{
-							Name = "BlockZ",
-							Type = "number",
-						},
-						{
-							Name = "BlockLight",
-							Type = "number",
-						},
-					},
-					Notes = "Sets the blocklight at the specified absolute coords",
-				},
-				SetBlockMeta =
-				{
-					Params =
-					{
-						{
-							Name = "BlockX",
-							Type = "number",
-						},
-						{
-							Name = "BlockY",
-							Type = "number",
-						},
-						{
-							Name = "BlockZ",
-							Type = "number",
-						},
-						{
-							Name = "BlockMeta",
-							Type = "number",
-						},
-					},
-					Notes = "Sets the block meta at the specified absolute coords",
-				},
-				SetBlockSkyLight =
-				{
-					Params =
-					{
-						{
-							Name = "BlockX",
-							Type = "number",
-						},
-						{
-							Name = "BlockY",
-							Type = "number",
-						},
-						{
-							Name = "BlockZ",
-							Type = "number",
-						},
-						{
-							Name = "BlockSkyLight",
-							Type = "number",
-						},
-					},
-					Notes = "Sets the skylight at the specified absolute coords",
-				},
-				SetBlockType =
-				{
-					Params =
-					{
-						{
-							Name = "BlockX",
-							Type = "number",
-						},
-						{
-							Name = "BlockY",
-							Type = "number",
-						},
-						{
-							Name = "BlockZ",
-							Type = "number",
-						},
-						{
-							Name = "BlockType",
-							Type = "number",
-						},
-					},
-					Notes = "Sets the block type at the specified absolute coords",
-				},
-				SetBlockTypeMeta =
-				{
-					Params =
-					{
-						{
-							Name = "BlockX",
-							Type = "number",
-						},
-						{
-							Name = "BlockY",
-							Type = "number",
-						},
-						{
-							Name = "BlockZ",
-							Type = "number",
-						},
-						{
-							Name = "BlockType",
-							Type = "number",
-						},
-						{
-							Name = "BlockMeta",
-							Type = "number",
-						},
-					},
-					Notes = "Sets the block type and meta at the specified absolute coords",
-				},
-				SetOrigin =
-				{
-					{
-						Params =
-						{
-							{
-								Name = "Origin",
-								Type = "Vector3i",
-							},
-						},
-						Notes = "Resets the origin for the absolute coords. Only affects how absolute coords are translated into relative coords.",
-					},
-					{
-						Params =
-						{
-							{
-								Name = "OriginX",
-								Type = "number",
-							},
-							{
-								Name = "OriginY",
-								Type = "number",
-							},
-							{
-								Name = "OriginZ",
-								Type = "number",
-							},
-						},
-						Notes = "Resets the origin for the absolute coords. Only affects how absolute coords are translated into relative coords.",
-					},
-				},
-				SetRelBlockLight =
-				{
-					Params =
-					{
-						{
-							Name = "RelBlockX",
-							Type = "number",
-						},
-						{
-							Name = "RelBlockY",
-							Type = "number",
-						},
-						{
-							Name = "RelBlockZ",
-							Type = "number",
-						},
-						{
-							Name = "BlockLight",
-							Type = "number",
-						},
-					},
-					Notes = "Sets the blocklight at the specified relative coords",
-				},
-				SetRelBlockMeta =
-				{
-					Params =
-					{
-						{
-							Name = "RelBlockX",
-							Type = "number",
-						},
-						{
-							Name = "RelBlockY",
-							Type = "number",
-						},
-						{
-							Name = "RelBlockZ",
-							Type = "number",
-						},
-						{
-							Name = "BlockMeta",
-							Type = "number",
-						},
-					},
-					Notes = "Sets the block meta at the specified relative coords",
-				},
-				SetRelBlockSkyLight =
-				{
-					Params =
-					{
-						{
-							Name = "RelBlockX",
-							Type = "number",
-						},
-						{
-							Name = "RelBlockY",
-							Type = "number",
-						},
-						{
-							Name = "RelBlockZ",
-							Type = "number",
-						},
-						{
-							Name = "BlockSkyLight",
-							Type = "number",
-						},
-					},
-					Notes = "Sets the skylight at the specified relative coords",
-				},
-				SetRelBlockType =
-				{
-					Params =
-					{
-						{
-							Name = "RelBlockX",
-							Type = "number",
-						},
-						{
-							Name = "RelBlockY",
-							Type = "number",
-						},
-						{
-							Name = "RelBlockZ",
-							Type = "number",
-						},
-						{
-							Name = "BlockType",
-							Type = "number",
-						},
-					},
-					Notes = "Sets the block type at the specified relative coords",
-				},
-				SetRelBlockTypeMeta =
-				{
-					Params =
-					{
-						{
-							Name = "RelBlockX",
-							Type = "number",
-						},
-						{
-							Name = "RelBlockY",
-							Type = "number",
-						},
-						{
-							Name = "RelBlockZ",
-							Type = "number",
-						},
-						{
-							Name = "BlockType",
-							Type = "number",
-						},
-						{
-							Name = "BlockMeta",
-							Type = "number",
-						},
-					},
-					Notes = "Sets the block type and meta at the specified relative coords",
-				},
-				SetWEOffset =
-				{
-					{
-						Params =
-						{
-							{
-								Name = "Offset",
-								Type = "Vector3i",
-							},
-						},
-						Notes = "Sets the WE offset, a data value sometimes stored in the schematic files. Mostly used for WorldEdit. Cuberite doesn't use this value, but provides access to it using this method.",
-					},
-					{
-						Params =
-						{
-							{
-								Name = "OffsetX",
-								Type = "number",
-							},
-							{
-								Name = "OffsetY",
-								Type = "number",
-							},
-							{
-								Name = "OffsetZ",
-								Type = "number",
-							},
-						},
-						Notes = "Sets the WE offset, a data value sometimes stored in the schematic files. Mostly used for WorldEdit. Cuberite doesn't use this value, but provides access to it using this method.",
-					},
-				},
-				Write =
-				{
-					{
-						Params =
-						{
-							{
-								Name = "World",
-								Type = "cWorld",
-							},
-							{
-								Name = "MinPoint",
-								Type = "Vector3i",
-							},
-						},
-						Returns =
-						{
-							{
-								Name = "IsSuccess",
-								Type = "boolean",
-							},
-						},
-						Notes = "Writes the area into World at the specified coords, returns true if successful. baTypes and baMetas are written.",
-					},
-					{
-						Params =
-						{
-							{
-								Name = "World",
-								Type = "cWorld",
-							},
-							{
-								Name = "MinPoint",
-								Type = "Vector3i",
-							},
-							{
-								Name = "DataTypes",
-								Type = "number",
-							},
-						},
-						Returns =
-						{
-							{
-								Name = "IsSuccess",
-								Type = "boolean",
-							},
-						},
-						Notes = "Writes the area into World at the specified coords, returns true if successful. DataTypes is the sum of baXXX datatypes to write.",
-					},
-					{
-						Params =
-						{
-							{
-								Name = "World",
-								Type = "cWorld",
-							},
-							{
-								Name = "MinX",
-								Type = "number",
-							},
-							{
-								Name = "MinY",
-								Type = "number",
-							},
-							{
-								Name = "MinZ",
-								Type = "number",
-							},
-						},
-						Returns =
-						{
-							{
-								Name = "IsSuccess",
-								Type = "boolean",
-							},
-						},
-						Notes = "Writes the area into World at the specified coords, returns true if successful. baTypes and baMetas are written.",
-					},
-					{
-						Params =
-						{
-							{
-								Name = "World",
-								Type = "cWorld",
-							},
-							{
-								Name = "MinX",
-								Type = "number",
-							},
-							{
-								Name = "MinY",
-								Type = "number",
-							},
-							{
-								Name = "MinZ",
-								Type = "number",
-							},
-							{
-								Name = "DataTypes",
-								Type = "number",
-							},
-						},
-						Returns =
-						{
-							{
-								Name = "IsSuccess",
-								Type = "boolean",
-							},
-						},
-						Notes = "Writes the area into World at the specified coords, returns true if successful. DataTypes is the sum of baXXX datatypes to write.",
-					},
-				},
-			},
-			Constants =
-			{
-				baLight =
-				{
-					Notes = "Operations should work on block (emissive) light",
-				},
-				baMetas =
-				{
-					Notes = "Operations should work on block metas",
-				},
-				baSkyLight =
-				{
-					Notes = "Operations should work on skylight",
-				},
-				baTypes =
-				{
-					Notes = "Operation should work on block types",
-				},
-				msDifference =
-				{
-					Notes = "Block becomes air if 'self' and src are the same. Otherwise it becomes the src block.",
-				},
-				msFillAir =
-				{
-					Notes = "'self' is overwritten by Src only where 'self' has air blocks",
-				},
-				msImprint =
-				{
-					Notes = "Src overwrites 'self' anywhere where 'self' has non-air blocks",
-				},
-				msLake =
-				{
-					Notes = "Special mode for merging lake images",
-				},
-				msMask =
-				{
-					Notes = "The blocks that are exactly the same are kept in 'self', all differing blocks are replaced by air",
-				},
-				msOverwrite =
-				{
-					Notes = "Src overwrites anything in 'self'",
-				},
-				msSimpleCompare =
-				{
-					Notes = "The blocks that are exactly the same are replaced with air, all differing blocks are replaced by stone",
-				},
-				msSpongePrint =
-				{
-					Notes = "Similar to msImprint, sponge block doesn't overwrite anything, all other blocks overwrite everything",
-				},
-			},
-			ConstantGroups =
-			{
-				BATypes =
-				{
-					Include = "ba.*",
-					TextBefore = [[
-						The following constants are used to signalize the datatype to read or write:
-					]],
-				},
-				eMergeStrategy =
-				{
-					Include = "ms.*",
-					TextAfter = "See below for a detailed explanation of the individual merge strategies.",
-					TextBefore = [[
-						The Merge() function can use different strategies to combine the source and destination blocks.
-						The following constants are used:
-					]],
-				},
-			},
-			AdditionalInfo =
-			{
-				{
-					Header = "Merge strategies",
-					Contents = [[
-						<p>The strategy parameter specifies how individual blocks are combined together, using the table below.
-						</p>
-						<table class="inline">
-						<tbody><tr>
-						<th colspan="2">area block</th><th colspan="3">result</th>
-						</tr>
-						<tr>
-						<th> this </th><th> Src </th><th> msOverwrite </th><th> msFillAir </th><th> msImprint </th>
-						</tr>
-						<tr>
-						<td> air </td><td> air </td><td> air </td><td> air </td><td> air </td>
-						</tr>
-						<tr>
-						<td> A </td><td> air </td><td> air </td><td> A </td><td> A </td>
-						</tr>
-						<tr>
-						<td> air </td><td> B </td><td> B </td><td> B </td><td> B </td>
-						</tr>
-						<tr>
-						<td> A </td><td> B </td><td> B </td><td> A </td><td> B </td>
-						</tr>
-						<tr>
-						<td> A </td><td> A </td><td> A </td><td> A </td><td> A </td>
-						</td>
-						</tbody></table>
-
-						<p>
-						So to sum up:
-						<ol>
-						<li class="level1">msOverwrite completely overwrites all blocks with the Src's blocks</li>
-						<li class="level1">msFillAir overwrites only those blocks that were air</li>
-						<li class="level1">msImprint overwrites with only those blocks that are non-air</li>
-						</ol>
-						</p>
-
-						<h3>Special strategies</h3>
-						<p>For each strategy, evaluate the table rows from top downwards, the first match wins.</p>
-
-						<p>
-						<strong>msDifference</strong> - changes all the blocks which are the same to air. Otherwise the source block gets placed.
-						</p>
-						<table><tbody<tr>
-						<th colspan="2"> area block </th><th> </th><th> Notes </th>
-						</tr><tr>
-						<td> * </td><td> B </td><td> B </td><td> The blocks are different so we use block B </td>
-						</tr><tr>
-						<td> B </td><td> B </td><td> Air </td><td> The blocks are the same so we get air. </td>
-						</tr>
-						</tbody></table>
-
-
-						<p>
-						<strong>msLake</strong> - used for merging areas with lava and water lakes, in the appropriate generator.
-						</p>
-						<table><tbody><tr>
-						<th colspan="2"> area block </th><th> </th><th> Notes </th>
-						</tr><tr>
-						<th> self </th><th> Src </th><th> result </th><th> </th>
-						</tr><tr>
-						<td> A </td><td> sponge </td><td> A </td><td> Sponge is the NOP block </td>
-						</tr><tr>
-						<td> *        </td><td> air    </td><td> air    </td><td> Air always gets hollowed out, even under the oceans </td>
-						</tr><tr>
-						<td> water    </td><td> *      </td><td> water  </td><td> Water is never overwritten </td>
-						</tr><tr>
-						<td> lava     </td><td> *      </td><td> lava   </td><td> Lava is never overwritten </td>
-						</tr><tr>
-						<td> *        </td><td> water  </td><td> water  </td><td> Water always overwrites anything </td>
-						</tr><tr>
-						<td> *        </td><td> lava   </td><td> lava   </td><td> Lava always overwrites anything </td>
-						</tr><tr>
-						<td> dirt     </td><td> stone  </td><td> stone  </td><td> Stone overwrites dirt </td>
-						</tr><tr>
-						<td> grass    </td><td> stone  </td><td> stone  </td><td> ... and grass </td>
-						</tr><tr>
-						<td> mycelium </td><td> stone  </td><td> stone  </td><td> ... and mycelium </td>
-						</tr><tr>
-						<td> A        </td><td> stone  </td><td> A      </td><td> ... but nothing else </td>
-						</tr><tr>
-						<td> A        </td><td> *      </td><td> A      </td><td> Everything else is left as it is </td>
-						</tr>
-						</tbody></table>
-
-						<p>
-						<strong>msSpongePrint</strong> - used for most prefab-generators to merge the prefabs. Similar to
-						msImprint, but uses the sponge block as the NOP block instead, so that the prefabs may carve out air
-						pockets, too.
-						</p>
-						<table><tbody><tr>
-						<th colspan="2"> area block </th><th> </th><th> Notes </th>
-						</tr><tr>
-						<th> self </th><th> Src </th><th> result </th><th> </th>
-						</tr><tr>
-						<td> A </td><td> sponge </td><td> A </td><td> Sponge is the NOP block </td>
-						</tr><tr>
-						<td> * </td><td> B </td><td> B </td><td> Everything else overwrites anything </td>
-						</tr>
-						</tbody></table>
-
-						<p>
-						<strong>msMask</strong> - the blocks that are the same in the other area are kept, all the
-						differing blocks are replaced with air. Meta is used in the comparison, too, two blocks of the
-						same type but different meta are considered different and thus replaced with air.
-						</p>
-						<table><tbody><tr>
-						<th colspan="2"> area block </th><th> </th><th> Notes </th>
-						</tr><tr>
-						<th> self </th><th> Src </th><th> result </th><th> </th>
-						</tr><tr>
-						<td> A </td><td> A </td><td> A </td><td> Same blocks are kept </td>
-						</tr><tr>
-						<td> A </td><td> non-A </td><td> air </td><td> Differing blocks are replaced with air </td>
-						</tr>
-						</tbody></table>
-
-						<p>
-						<strong>msDifference</strong> - the blocks that are the same in both areas are replaced with air, all the
-						differing blocks are kept from the first area. Meta is used in the comparison, too, two blocks of the
-						same type but different meta are considered different.
-						</p>
-						<table><tbody><tr>
-						<th colspan="2"> area block </th><th> </th><th> Notes </th>
-						</tr><tr>
-						<th> self </th><th> Src </th><th> result </th><th> </th>
-						</tr><tr>
-						<td> A </td><td> A </td><td> air </td><td> Same blocks are replaced with air </td>
-						</tr><tr>
-						<td> A </td><td> non-A </td><td> A </td><td> Differing blocks are kept from 'self' </td>
-						</tr>
-						</tbody></table>
-
-						<p>
-						<strong>msSimpleCompare</strong> - the blocks that are the same in both areas are replaced with air, all the
-						differing blocks are replaced with stone. Meta is used in the comparison, too, two blocks of the
-						same type but different meta are considered different.
-						</p>
-						<table><tbody><tr>
-						<th colspan="2"> area block </th><th> </th><th> Notes </th>
-						</tr><tr>
-						<th> self </th><th> Src </th><th> result </th><th> </th>
-						</tr><tr>
-						<td> A </td><td> A </td><td> air </td><td> Same blocks are replaced with air </td>
-						</tr><tr>
-						<td> A </td><td> non-A </td><td> stone </td><td> Differing blocks are replaced with stone </td>
-						</tr>
-						</tbody></table>
-]],
-				},
-			},
-		},
 		cBlockInfo =
 		{
 			Desc = [[
@@ -2134,7 +202,7 @@ return
 							Type = "string",
 						},
 					},
-					Notes = "Returns the name of the sound that is played when placing the block of this type.",
+					Notes = "(<b>DEPRECATED</b>) Not used by cuberite internally and always returns an empty string.",
 				},
 				GetSpreadLightFalloff =
 				{
@@ -2226,6 +294,24 @@ return
 					},
 					Notes = "Returns whether the specified block type is solid.",
 				},
+				IsSkylightDispersant =
+				{
+					IsStatic = true,
+					Params =
+					{
+						{
+							Name = "BlockType",
+							Type = "number",
+						},
+					},
+					Returns =
+					{
+						{
+							Type = "boolean",
+						},
+					},
+					Notes = "Returns true if skylight is impeded by passage through a block of the specified type.",
+				},
 				IsTransparent =
 				{
 					IsStatic = true,
@@ -2309,16 +395,6 @@ return
 				{
 					Type = "bool",
 					Notes = "Can a piston break this block?",
-				},
-				m_PlaceSound =
-				{
-					Type = "string",
-					Notes = "The name of the sound that is placed when a block is placed.",
-				},
-				m_RequiresSpecialTool =
-				{
-					Type = "bool",
-					Notes = "Does this block require a tool to drop?",
 				},
 				m_SpreadLightFalloff =
 				{
@@ -3280,6 +1356,16 @@ end
 					},
 					Notes = "Returns the brand that the client has sent in their MC|Brand plugin message.",
 				},
+				GetForgeMods =
+				{
+					Returns =
+					{
+						{
+							Type = "table",
+						},
+					},
+					Notes = "Returns the Forge mods installed on the client.",
+				},
 				GetIPString =
 				{
 					Returns =
@@ -3398,6 +1484,16 @@ end
 					},
 					Notes = "Returns true if the client has registered to receive messages on the specified plugin channel.",
 				},
+				IsForgeClient =
+				{
+					Returns =
+					{
+						{
+							Type = "boolean",
+						},
+					},
+					Notes = "Returns true if the client is modded with Forge.",
+				},
 				IsUUIDOnline =
 				{
 					IsStatic = true,
@@ -3405,7 +1501,7 @@ end
 					{
 						{
 							Name = "UUID",
-							Type = "string",
+							Type = "cUUID",
 						},
 					},
 					Returns =
@@ -3414,7 +1510,7 @@ end
 							Type = "boolean",
 						},
 					},
-					Notes = "Returns true if the UUID is generated by online auth, false if it is an offline-generated UUID. We use Version-3 UUIDs for offline UUIDs, online UUIDs are Version-4, thus we can tell them apart. Accepts both 32-char and 36-char UUIDs (with and without dashes). If the string given is not a valid UUID, returns false.",
+					Notes = "Returns true if the UUID is generated by online auth, false if it is an offline-generated UUID. We use Version-3 UUIDs for offline UUIDs, online UUIDs are Version-4, thus we can tell them apart. Accepts both 32-char and 36-char UUIDs (with and without dashes).",
 				},
 				Kick =
 				{
@@ -3545,6 +1641,29 @@ end
 							Type = "string",
 						},
 						{
+							Name = "Position",
+							Type = "Vector3d",
+						},
+						{
+							Name = "Volume",
+							Type = "number",
+						},
+						{
+							Name = "Pitch",
+							Type = "number",
+						},
+					},
+					Notes = "Sends a sound effect request to the client. The sound is played at the specified coords, with the specified volume (a float, 1.0 is full volume, can be more) and pitch (0-255, 63 is 100%)",
+				},
+				SendSoundEffect =
+				{
+					Params =
+					{
+						{
+							Name = "SoundName",
+							Type = "string",
+						},
+						{
 							Name = "X",
 							Type = "number",
 						},
@@ -3565,7 +1684,7 @@ end
 							Type = "number",
 						},
 					},
-					Notes = "Sends a sound effect request to the client. The sound is played at the specified coords, with the specified volume (a float, 1.0 is full volume, can be more) and pitch (0-255, 63 is 100%)",
+					Notes = "Sends a sound effect request to the client. The sound is played at the specified coords, with the specified volume (a float, 1.0 is full volume, can be more) and pitch (0-255, 63 is 100%) (DEPRECATED, use vector-parametered version instead)",
 				},
 				SendTitleTimes =
 				{
@@ -3659,6 +1778,178 @@ end
 				MIN_VIEW_DISTANCE =
 				{
 					Notes = "The minimum value of the view distance",
+				},
+			},
+		},
+		cColor =
+		{
+			Desc = [[
+				Encapsulates a RGB color, e.g. for armor.
+			]],
+			Functions =
+			{
+				Clear =
+				{
+					Notes = "Resets the color to uninitialized."
+				},
+				constructor =
+				{
+					{
+						Returns = { {Type="cColor"} },
+						Notes = "Creates an uninitialized cColor. Each component must be between 0 and 255, inclusive.",
+					},
+					{
+						Params =
+						{
+							{
+								Name = "Red",
+								Type = "number",
+							},
+							{
+								Name = "Green",
+								Type = "number",
+							},
+							{
+								Name = "Blue",
+								Type = "number",
+							},
+						},
+						Returns = { {Type="cColor"} },
+						Notes = "Creates the specified cColor. All components must be between 0 and 255, inclusive.",
+					},
+				},
+				GetColor =
+				{
+					Returns =
+					{
+						{
+							Name = "Red",
+							Type = "number",
+						},
+						{
+							Name = "Green",
+							Type = "number",
+						},
+						{
+							Name = "Blue",
+							Type = "number",
+						},
+					},
+					Notes = "Returns the color's red, green, and blue components, respectively."
+				},
+				GetRed =
+				{
+					Returns =
+					{
+						{
+							Name = "Red",
+							Type = "number",
+						},
+					},
+					Notes = "Returns the color's red component."
+				},
+				GetGreen =
+				{
+					Returns =
+					{
+						{
+							Name = "Green",
+							Type = "number",
+						},
+					},
+					Notes = "Returns the color's green component."
+				},
+				GetBlue =
+				{
+					Returns =
+					{
+						{
+							Name = "Blue",
+							Type = "number",
+						},
+					},
+					Notes = "Returns the color's blue component."
+				},
+				IsValid =
+				{
+					Returns =
+					{
+						{
+							Type = "boolean"
+						},
+					},
+					Notes = "True if the color is valid, false if the color has not been set yet."
+				},
+				SetColor =
+				{
+					Params =
+					{
+						{
+							Name = "Red",
+							Type = "number"
+						},
+						{
+							Name = "Green",
+							Type = "number"
+						},
+						{
+							Name = "Blue",
+							Type = "number"
+						},
+					},
+					Notes = "Sets the color's red, green, and blue components. Values range from 0 to 255."
+				},
+				SetRed =
+				{
+					Params =
+					{
+						{
+							Name = "Red",
+							Type = "number",
+						},
+					},
+					Notes = "Sets the color's red component. Must be between 0 and 255, inclusive."
+				},
+				SetGreen =
+				{
+					Params =
+					{
+						{
+							Name = "Green",
+							Type = "number",
+						},
+					},
+					Notes = "Sets the color's green component. Must be between 0 and 255, inclusive."
+				},
+				SetBlue =
+				{
+					Params =
+					{
+						{
+							Name = "Blue",
+							Type = "number",
+						},
+					},
+					Notes = "Sets the color's blue component. Must be between 0 and 255, inclusive."
+				},
+			},
+			Constants =
+			{
+				COLOR_LIMIT =
+				{
+					Notes = "The upper bound (exclusive) for a color component",
+				},
+				COLOR_MAX =
+				{
+					Notes = "The maximum value for a color component",
+				},
+				COLOR_MIN =
+				{
+					Notes = "The minimum value for a color component",
+				},
+				COLOR_NONE =
+				{
+					Notes = "A constant denoting the color is invalid (note: use IsValid)",
 				},
 			},
 		},
@@ -3953,7 +2244,7 @@ function OnPlayerJoined(a_Player)
 	-- Send an example composite chat message to the player:
 	a_Player:SendMessage(cCompositeChat()
 		:AddTextPart("Hello, ")
-		:AddUrlPart(a_Player:GetName(), "http://cuberite.org", "u@2")  -- Colored underlined link
+		:AddUrlPart(a_Player:GetName(), "https://cuberite.org", "u@2")  -- Colored underlined link
 		:AddSuggestCommandPart(", and welcome.", "/help", "u")       -- Underlined suggest-command
 		:AddRunCommandPart(" SetDay", "/time set 0")                 -- Regular text that will execute command when clicked
 		:SetMessageType(mtJoin)                                      -- It is a join-message
@@ -4456,6 +2747,23 @@ local Hash = cCryptoHash.sha1HexString("DataToHash")
 					},
 					Notes = "Returns the level of the specified enchantment stored in this object; 0 if not stored",
 				},
+				CanAddEnchantment =
+				{
+					Params =
+					{
+						{
+							Name = "EnchantmentNumID",
+							Type = "number",
+						},
+					},
+					Returns =
+					{
+						{
+							Type = "boolean"
+						},
+					},
+					Notes = "Returns true if the specified enchantment is not mutually exclusive with any of the enchantments stored by the object.",
+				},
 				IsEmpty =
 				{
 					Returns =
@@ -4779,6 +3087,17 @@ local Hash = cCryptoHash.sha1HexString("DataToHash")
 					},
 					Notes = "Adds the specified amount of speed in the Z axis direction.",
 				},
+				ApplyArmorDamage =
+				{
+					Params =
+					{
+						{
+							Name = "DamageBlocked",
+							Type = "number",
+						},
+					},
+					Notes = "Lowers armor durability, as if the armor blocked the given amount of damage.",
+				},
 				ArmorCoversAgainst =
 				{
 					Params =
@@ -4807,6 +3126,16 @@ local Hash = cCryptoHash.sha1HexString("DataToHash")
 						},
 					},
 					Notes = "Schedules the entity to be destroyed; if ShouldBroadcast is not present or set to true, broadcasts the DestroyEntity packet",
+				},
+				DoesPreventBlockPlacement =
+				{
+					Returns =
+					{
+						{
+							Type = "boolean",
+						},
+					},
+					Notes = "Returns true if this entity doesn't allow blocks to be placed intersecting the entity.",
 				},
 				GetAirLevel =
 				{
@@ -4883,6 +3212,31 @@ local Hash = cCryptoHash.sha1HexString("DataToHash")
 						},
 					},
 					Notes = "Returns the entity classname that this class implements. Each descendant overrides this function.",
+				},
+				GetEnchantmentCoverAgainst =
+				{
+					Params =
+					{
+						{
+							Name = "AttackerEntity",
+							Type = "cEntity",
+						},
+						{
+							Name = "DamageType",
+							Type = "eDamageType",
+						},
+						{
+							Name = "RawDamage",
+							Type = "number",
+						},
+					},
+					Returns =
+					{
+						{
+							Type = "number",
+						},
+					},
+					Notes = "Returns the number of hitpoints out of RawDamage that the enchantments on the currently equipped armor would cover. See {{TakeDamageInfo}} for more information on attack damage.",
 				},
 				GetEntityType =
 				{
@@ -5362,6 +3716,16 @@ local Hash = cCryptoHash.sha1HexString("DataToHash")
 					},
 					Notes = "Returns true if the entity is an item frame.",
 				},
+				IsLeashKnot =
+				{
+					Returns =
+					{
+						{
+							Type = "boolean",
+						},
+					},
+					Notes = "Returns true if the entity is a leash knot.",
+				},
 				IsMinecart =
 				{
 					Returns =
@@ -5533,10 +3897,6 @@ local Hash = cCryptoHash.sha1HexString("DataToHash")
 					},
 					Notes = "This entity has killed another entity (the Victim). For players, adds the scoreboard statistics about the kill.",
 				},
-				KilledBy =
-				{
-					Notes = "FIXME: Remove this from API",
-				},
 				MoveToWorld =
 				{
 					{
@@ -5623,8 +3983,13 @@ local Hash = cCryptoHash.sha1HexString("DataToHash")
 							Type = "boolean",
 							IsOptional = true,
 						},
+						{
+							Name = "ShouldSendRespawn",
+							Type = "boolean",
+							IsOptional  = true,
+						},
 					},
-					Notes = "Schedules a MoveToWorld call to occur on the next Tick of the entity. If ShouldSetPortalCooldown is false (default), doesn't set any portal cooldown, if it is true, the default portal cooldown is applied to the entity.",
+					Notes = "Schedules a MoveToWorld call to occur on the next Tick of the entity. If ShouldSetPortalCooldown is false (default), doesn't set any portal cooldown, if it is true, the default portal cooldown is applied to the entity. If ShouldSendRespawn is false (default), no respawn packet is sent, if it is true then a respawn packet is sent to the client.",
 				},
 				SetGravity =
 				{
@@ -5658,10 +4023,6 @@ local Hash = cCryptoHash.sha1HexString("DataToHash")
 						},
 					},
 					Notes = "Sets the entity's health to the specified amount of hitpoints. Doesn't broadcast any hurt animation. Doesn't kill the entity if health drops below zero. Use the TakeDamage() function instead for taking damage.",
-				},
-				SetHeight =
-				{
-					Notes = "FIXME: Remove this from API",
 				},
 				SetInvulnerableTicks =
 				{
@@ -5861,10 +4222,6 @@ local Hash = cCryptoHash.sha1HexString("DataToHash")
 					},
 					Notes = "Sets the Z component of the entity speed",
 				},
-				SetWidth =
-				{
-					Notes = "FIXME: Remove this from API",
-				},
 				SetYaw =
 				{
 					Params =
@@ -6034,7 +4391,11 @@ local Hash = cCryptoHash.sha1HexString("DataToHash")
 				},
 				etItemFrame =
 				{
-					Notes = "",
+					Notes = "The entity is an item frame",
+				},
+				etLeashKnot =
+				{
+					Notes = "The entity is a leash knot",
 				},
 				etMinecart =
 				{
@@ -7979,7 +6340,7 @@ These ItemGrids are available in the API and can be manipulated by the plugins, 
 						},
 					},
 					Notes = "Returns current item in shield slot.",
-				},				
+				},
 				GetInventoryGrid =
 				{
 					Returns =
@@ -8140,7 +6501,13 @@ These ItemGrids are available in the API and can be manipulated by the plugins, 
 				},
 				RemoveOneEquippedItem =
 				{
-					Notes = "Removes one item from the hotbar's currently selected slot",
+					Returns =
+					{
+						{
+							Type = "boolean",
+						},
+					},
+					Notes = "Removes one item from the hotbar's currently selected slot. Returns true on success.",
 				},
 				SendEquippedSlot =
 				{
@@ -8197,7 +6564,7 @@ These ItemGrids are available in the API and can be manipulated by the plugins, 
 						},
 					},
 					Notes = "Sets the shield slot content",
-				},				
+				},
 				SetInventorySlot =
 				{
 					Params =
@@ -8313,6 +6680,49 @@ These ItemGrids are available in the API and can be manipulated by the plugins, 
 					},
 					Notes = "Adds the specified amount to the item count. Returns self (useful for chaining).",
 				},
+				AddEnchantment =
+				{
+					Params =
+					{
+						{
+							Name = "Enchantment ID",
+							Type = "number",
+						},
+						{
+							Name = "Level",
+							Type = "number",
+						},
+						{
+							Name = "FromBook",
+							Type = "boolean",
+						},
+					},
+					Returns =
+					{
+						{
+							Type = "number",
+						},
+					},
+					Notes = "Adds the given enchantment at the given level to this item, following anvil enchantment combining rules. Returns the XP level cost of the addition. FromBook specifies whether to use the XP multiplier for books or the multiplier used for other items, if true it uses the multiplier for books.",
+				},
+				AddEnchantmentsFromItem =
+				{
+					Params =
+					{
+						{
+							Name = "Additive",
+							Type = "cItem",
+						},
+					},
+					Returns =
+					{
+						{
+							Name = "LevelCost",
+							Type = "number",
+						},
+					},
+					Notes = "Adds the enchantments from the specified item to this item, returning the cost as if this were an anvil.",
+				},
 				Clear =
 				{
 					Notes = "Resets the instance to an empty item",
@@ -8357,7 +6767,7 @@ These ItemGrids are available in the API and can be manipulated by the plugins, 
 							},
 							{
 								Name = "Lore",
-								Type = "string",
+								Type = "table",
 								IsOptional = true,
 							},
 						},
@@ -8517,7 +6927,7 @@ These ItemGrids are available in the API and can be manipulated by the plugins, 
 							Type = "number",
 						},
 						{
-							Name = "WithBook",
+							Name = "FromBook",
 							Type = "boolean",
 						},
 					},
@@ -8527,7 +6937,7 @@ These ItemGrids are available in the API and can be manipulated by the plugins, 
 							Type = "boolean",
 						},
 					},
-					Notes = "Returns true if the specified item type is enchantable. If WithBook is true, the function is used in the anvil inventory with book enchantments. So it checks the \"only book enchantments\" too. Example: You can only enchant a hoe with a book.",
+					Notes = "Returns true if the specified item type is enchantable. If FromBook is true, the function is used in the anvil inventory with book enchantments. So it checks the \"only book enchantments\" too. Example: You can only enchant a hoe with a book.",
 				},
 				IsEqual =
 				{
@@ -8611,10 +7021,10 @@ These ItemGrids are available in the API and can be manipulated by the plugins, 
 					Type = "number",
 					Notes = "The item type. One of E_ITEM_ or E_BLOCK_ constants",
 				},
-				m_Lore =
+				m_LoreTable =
 				{
-					Type = "string",
-					Notes = "The lore for an item. Line breaks are represented by the ` character.",
+					Type = "table",
+					Notes = "The lore for an item. Represented as an array table of lines.",
 				},
 				m_RepairCost =
 				{
@@ -9352,7 +7762,8 @@ This class represents a 2D array of items. It is used as the underlying storage 
 						The following code tries to add 32 sticks to a player's main inventory:
 <pre class="prettyprint lang-lua">
 local Items = cItem(E_ITEM_STICK, 32);
-local PlayerMainInventory = Player:GetInventorySlots();  -- PlayerMainInventory is of type cItemGrid
+local PlayerInventory = Player:GetInventory();
+local PlayerMainInventory = PlayerInventory:GetInventoryGrid();  -- PlayerMainInventory is of type cItemGrid
 local NumAdded = PlayerMainInventory:AddItem(Items);
 if (NumAdded == Items.m_ItemCount) then
   -- All the sticks did fit
@@ -9369,7 +7780,8 @@ end
 					Contents = [[
 						The following code damages the helmet in the player's armor and destroys it if it reaches max damage:
 <pre class="prettyprint lang-lua">
-local PlayerArmor = Player:GetArmorSlots();  -- PlayerArmor is of type cItemGrid
+local PlayerInventory = Player:GetInventory();
+local PlayerArmor = PlayerInventory:GetArmorGrid();  -- PlayerArmor is of type cItemGrid
 if (PlayerArmor:DamageItem(0)) then  -- Helmet is at SlotNum 0
   -- The helmet has reached max damage, destroy it:
   PlayerArmor:EmptySlot(0);
@@ -9691,6 +8103,17 @@ This class is used by plugins wishing to display a custom window to the player, 
 					},
 					Notes = "Returns the cItemGrid object representing the internal storage in this window",
 				},
+				SetOnClicked =
+				{
+					Params =
+					{
+						{
+							Name = "OnClickedCallback",
+							Type = "function",
+						},
+					},
+					Notes = "Sets the function that the window will call when it is about to process a click from a player. See {{#additionalinfo_1|below}} for the signature of the callback function.",
+				},
 				SetOnClosing =
 				{
 					Params =
@@ -9723,6 +8146,17 @@ This class is used by plugins wishing to display a custom window to the player, 
 					]],
 				},
 				{
+					Header = "OnClicked Callback",
+					Contents = [[
+						This callback, settable via the SetOnClicked() function, will be called when the player clicks a slot in the window. The callback can cancel the click.</p>
+<pre class="prettyprint lang-lua">
+function OnWindowClicked(a_Window, a_Player, a_SlotNum, a_ClickAction, a_ClickedItem)
+</pre>
+						<p>
+						The a_Window parameter is the cLuaWindow object representing the window, a_Player is the player who made the click, a_SlotNum is the slot the player clicked, a_ClickAction is the type of click the player made, and a_ClickedItem is the item the player clicked on, if applicable. If the function returns true, the click is cancelled (internally, the server resends the window slots to the player to keep the player in sync).
+					]],
+				},
+				{
 					Header = "OnClosing Callback",
 					Contents = [[
 						This callback, settable via the SetOnClosing() function, will be called when the player tries to close the window, or the window is closed for any other reason (such as a player disconnecting).</p>
@@ -9748,7 +8182,7 @@ function OnWindowSlotChanged(a_Window, a_SlotNum)
 				{
 					Header = "Example",
 					Contents = [[
-						This example is taken from the Debuggers plugin, used to test the API functionality. It opens a window and refuse to close it 3 times. It also logs slot changes to the server console.
+						This example is taken from the Debuggers plugin, used to test the API functionality. It opens a window and refuse to close it 3 times. It also logs slot changes to the server console and prevents shift-clicking in the window.
 <pre class="prettyprint lang-lua">
 -- Callback that refuses to close the window twice, then allows:
 local Attempt = 1;
@@ -9763,10 +8197,18 @@ local OnSlotChanged = function(Window, SlotNum)
 	LOG("Window \"" .. Window:GetWindowTitle() .. "\" slot " .. SlotNum .. " changed.");
 end
 
+-- Prevent shift-clicking:
+local OnClicked = function(Window, ClickingPlayer, SlotNum, ClickAction, ClickedItem)
+	if ClickAction == caShiftLeftClick then
+		return true
+	end
+end
+
 -- Set window contents:
 -- a_Player is a cPlayer object received from the outside of this code fragment
 local Window = cLuaWindow(cWindow.wtHopper, 3, 3, "TestWnd");
 Window:SetSlot(a_Player, 0, cItem(E_ITEM_DIAMOND, 64));
+Window:SetOnClicked(OnClicked);
 Window:SetOnClosing(OnClosing);
 Window:SetOnSlotChanged(OnSlotChanged);
 
@@ -10103,10 +8545,9 @@ a_Player:OpenWindow(Window);
 				<p>
 				All the functions are static, call them using the <code>cMojangAPI:Function()</code> convention.</p>
 				<p>
-				Mojang uses two formats for UUIDs, short and dashed. Cuberite works with short UUIDs internally, but
-				will convert to dashed UUIDs where needed - in the protocol login for example. The MakeUUIDShort()
-				and MakeUUIDDashed() functions are provided for plugins to use for conversion between the two
-				formats.</p>
+				Mojang uses two formats for UUIDs, short and dashed. Cuberite will accept either format for any
+				functions taking a UUID. The MakeUUIDShort() and MakeUUIDDashed() functions are provided for plugins
+				to use for conversion between the two formats.</p>
 				<p>
 				This class will cache values returned by the API service. The cache will hold the values for 7 days
 				by default, after that, they will no longer be available. This is in order to not let the server get
@@ -10127,10 +8568,10 @@ a_Player:OpenWindow(Window);
 						},
 						{
 							Name = "UUID",
-							Type = "string",
+							Type = "cUUID",
 						},
 					},
-					Notes = "Adds the specified PlayerName-to-UUID mapping into the cache, with current timestamp. Accepts both short or dashed UUIDs. ",
+					Notes = "Adds the specified PlayerName-to-UUID mapping into the cache, with current timestamp.",
 				},
 				GetPlayerNameFromUUID =
 				{
@@ -10139,7 +8580,7 @@ a_Player:OpenWindow(Window);
 					{
 						{
 							Name = "UUID",
-							Type = "string",
+							Type = "cUUID",
 						},
 						{
 							Name = "UseOnlyCached",
@@ -10210,7 +8651,7 @@ a_Player:OpenWindow(Window);
 					{
 						{
 							Name = "UUID",
-							Type = "string",
+							Type = "cUUID",
 						},
 					},
 					Returns =
@@ -10220,7 +8661,7 @@ a_Player:OpenWindow(Window);
 							Type = "string",
 						},
 					},
-					Notes = "Converts the UUID to a dashed format (\"01234567-8901-2345-6789-012345678901\"). Accepts both dashed or short UUIDs. Logs a warning and returns an empty string if UUID format not recognized.",
+					Notes = "Converts the UUID to a dashed format (\"01234567-8901-2345-6789-012345678901\"). An alias for cUUID:ToLongString()",
 				},
 				MakeUUIDShort =
 				{
@@ -10229,7 +8670,7 @@ a_Player:OpenWindow(Window);
 					{
 						{
 							Name = "UUID",
-							Type = "string",
+							Type = "cUUID",
 						},
 					},
 					Returns =
@@ -10239,7 +8680,7 @@ a_Player:OpenWindow(Window);
 							Type = "string",
 						},
 					},
-					Notes = "Converts the UUID to a short format (without dashes, \"01234567890123456789012345678901\"). Accepts both dashed or short UUIDs. Logs a warning and returns an empty string if UUID format not recognized.",
+					Notes = "Converts the UUID to a short format (without dashes, \"01234567890123456789012345678901\"). An alias for cUUID:ToShortString()",
 				},
 			},
 		},
@@ -10252,6 +8693,16 @@ a_Player:OpenWindow(Window);
 			]],
 			Functions =
 			{
+				CanBeLeashed =
+				{
+					Returns =
+					{
+						{
+							Type = "boolean",
+						},
+					},
+					Notes = "Returns whether the mob can be leashed.",
+				},
 				FamilyFromType =
 				{
 					IsStatic = true,
@@ -10259,7 +8710,7 @@ a_Player:OpenWindow(Window);
 					{
 						{
 							Name = "MobType",
-							Type = "Globals#eMonsterType",
+							Type = "eMonsterType",
 						},
 					},
 					Returns =
@@ -10291,6 +8742,17 @@ a_Player:OpenWindow(Window);
 					},
 					Notes = "Gets the custom name of the monster. If no custom name is set, the function returns an empty string.",
 				},
+				GetLeashedTo =
+				{
+					Returns =
+					{
+						{
+							Name = "LeashedTo",
+							Type = "cEntity",
+						},
+					},
+					Notes = "Returns the entity to where this mob is leashed, returns nil if it's not leashed",
+				},
 				GetMobFamily =
 				{
 					Returns =
@@ -10308,7 +8770,7 @@ a_Player:OpenWindow(Window);
 					{
 						{
 							Name = "MobType",
-							Type = "Globals#eMonsterType",
+							Type = "eMonsterType",
 						},
 					},
 					Notes = "Returns the type of this mob ({{Globals#eMonsterType|mtXXX}} constant)",
@@ -10371,6 +8833,27 @@ a_Player:OpenWindow(Window);
 					},
 					Notes = "Is the custom name of this monster always visible? If not, you only see the name when you sight the mob.",
 				},
+				IsLeashed =
+				{
+					Returns =
+					{
+						{
+							Type = "boolean",
+						},
+					},
+					Notes = "Returns whether the monster is leashed to an entity.",
+				},
+				LeashTo =
+				{
+					Params =
+					{
+						{
+							Name = "Entity",
+							Type = "cEntity",
+						}
+					},
+					Notes = "Leash the monster to an entity.",
+				},
 				MobTypeToString =
 				{
 					IsStatic = true,
@@ -10378,7 +8861,7 @@ a_Player:OpenWindow(Window);
 					{
 						{
 							Name = "MobType",
-							Type = "Globals#eMonsterType",
+							Type = "eMonsterType",
 						},
 					},
 					Returns =
@@ -10396,7 +8879,7 @@ a_Player:OpenWindow(Window);
 					{
 						{
 							Name = "MobType",
-							Type = "Globals#eMonsterType",
+							Type = "eMonsterType",
 						},
 					},
 					Returns =
@@ -10428,6 +8911,17 @@ a_Player:OpenWindow(Window);
 						},
 					},
 					Notes = "Sets the age of the monster",
+				},
+				SetCanBeLeashed =
+				{
+					Params =
+					{
+						{
+							Name = "CanBeLeashed",
+							Type = "boolean",
+						}
+					},
+					Notes = "Sets whether the mob can be leashed, for extensibility in plugins"
 				},
 				SetCustomName =
 				{
@@ -10476,10 +8970,21 @@ a_Player:OpenWindow(Window);
 					{
 						{
 							Name = "MobType",
-							Type = "Globals#eMonsterType",
+							Type = "eMonsterType",
 						},
 					},
 					Notes = "Returns the mob type ({{Globals#eMonsterType|mtXXX}} constant) parsed from the string type (\"creeper\"), or mtInvalidType if unrecognized.",
+				},
+				Unleash =
+				{
+					Params =
+					{
+						{
+							Name = "ShouldDropLeashPickup",
+							Type = "boolean",
+						},
+					},
+					Notes = "Unleash the monster.",
 				},
 			},
 			Constants =
@@ -10874,7 +9379,7 @@ a_Player:OpenWindow(Window);
 					{
 						{
 							Name = "EffectType",
-							Type = "cEntityEffect",
+							Type = "cEntityEffect#eType",
 						},
 						{
 							Name = "EffectDurationTicks",
@@ -10895,22 +9400,13 @@ a_Player:OpenWindow(Window);
 				{
 					Notes = "Removes all currently applied entity effects",
 				},
-				GetHealth =
-				{
-					Returns =
-					{
-						{
-							Type = "number",
-						},
-					},
-				},
 				HasEntityEffect =
 				{
 					Params =
 					{
 						{
 							Name = "EffectType",
-							Type = "cEntityEffect",
+							Type = "cEntityEffect#eType",
 						},
 					},
 					Returns =
@@ -10921,36 +9417,16 @@ a_Player:OpenWindow(Window);
 					},
 					Notes = "Returns true, if the supplied entity effect type is currently applied",
 				},
-				Heal =
-				{
-
-				},
-				KilledBy =
-				{
-
-				},
 				RemoveEntityEffect =
 				{
 					Params =
 					{
 						{
 							Name = "EffectType",
-							Type = "cEntityEffect",
+							Type = "cEntityEffect#eType",
 						},
 					},
 					Notes = "Removes a currently applied entity effect",
-				},
-				TakeDamage =
-				{
-
-				},
-				TeleportTo =
-				{
-
-				},
-				TeleportToEntity =
-				{
-
 				},
 			},
 			Inherits = "cEntity",
@@ -11190,6 +9666,16 @@ a_Player:OpenWindow(Window);
 			]],
 			Functions =
 			{
+				CanCombine =
+				{
+					Returns =
+					{
+						{
+							Type = "boolean"
+						}
+					},
+					Notes = "Returns whether this pickup is allowed to combine with other similar pickups.",
+				},
 				CollectedBy =
 				{
 					Params =
@@ -11228,6 +9714,16 @@ a_Player:OpenWindow(Window);
 					},
 					Notes = "Returns the item represented by this pickup",
 				},
+				GetLifetime =
+				{
+					Returns =
+					{
+						{
+							Type = "number",
+						},
+					},
+					Notes = "Returns the total length of this pickup's lifespan, in ticks.",
+				},
 				IsCollected =
 				{
 					Returns =
@@ -11258,6 +9754,28 @@ a_Player:OpenWindow(Window);
 						},
 					},
 					Notes = "Sets the pickup's age, in ticks.",
+				},
+				SetCanCombine =
+				{
+					Params =
+					{
+						{
+							Name = "CanCombine",
+							Type = "boolean",
+						},
+					},
+					Notes = "Sets whether this pickup is allowed to combine with other similar pickups.",
+				},
+				SetLifetime =
+				{
+					Params =
+					{
+						{
+							Name = "LifeTimeInTicks",
+							Type = "number",
+						},
+					},
+					Notes = "Sets the total lifespan of this pickup before it despawns, in ticks. Does not reset the age of the pickup, use SetAge(0). If new lifetime is less than the current age, pickup will despawn.",
 				},
 			},
 			Inherits = "cEntity",
@@ -11357,6 +9875,12 @@ a_Player:OpenWindow(Window);
 							Type = "number",
 						},
 					},
+					Returns =
+					{
+						{
+							Type = "number",
+						},
+					},
 					Notes = "Adds or removes XP from the current XP amount. Won't allow XP to go negative. Returns the new experience, -1 on error (XP overflow).",
 				},
 				Feed =
@@ -11379,17 +9903,6 @@ a_Player:OpenWindow(Window);
 						},
 					},
 					Notes = "Tries to add the specified amounts to food level and food saturation level (only positive amounts expected). Returns true if player was hungry and the food was consumed, false if too satiated.",
-				},
-				FoodPoison =
-				{
-					Params =
-					{
-						{
-							Name = "NumTicks",
-							Type = "number",
-						},
-					},
-					Notes = "Starts the food poisoning for the specified amount of ticks; if already foodpoisoned, sets FoodPoisonedTicksRemaining to the larger of the two",
 				},
 				ForceSetSpeed =
 				{
@@ -11432,6 +9945,16 @@ a_Player:OpenWindow(Window);
 						},
 					},
 					Notes = "Returns the full color code to be used for this player's messages (based on their rank). Prefix player messages with this code.",
+				},
+				GetDraggingItem =
+				{
+					Returns =
+					{
+						{
+							Type = "cItem",
+						},
+					},
+					Notes = "Returns the item the player is dragging in a UI window."
 				},
 				GetPrefix =
 				{
@@ -11479,7 +10002,7 @@ a_Player:OpenWindow(Window);
 					{
 						{
 							Name = "GameMode",
-							Type = "Globals#eGameMode",
+							Type = "eGameMode",
 						},
 					},
 					Notes = "(OBSOLETE) Returns the current resolved game mode of the player. If the player is set to inherit the world's gamemode, returns that instead. See also GetGameMode() and IsGameModeXXX() functions. Note that this function is the same as GetGameMode(), use that function instead.",
@@ -11555,10 +10078,6 @@ a_Player:OpenWindow(Window);
 					},
 					Notes = "Returns the food level (number of half-drumsticks on-screen)",
 				},
-				GetFoodPoisonedTicksRemaining =
-				{
-					Notes = "Returns the number of ticks left for the food posoning effect",
-				},
 				GetFoodSaturationLevel =
 				{
 					Returns =
@@ -11571,6 +10090,12 @@ a_Player:OpenWindow(Window);
 				},
 				GetFoodTickTimer =
 				{
+					Returns =
+					{
+						{
+							Type = "number",
+						},
+					},
 					Notes = "Returns the number of ticks past the last food-based heal or damage action; when this timer reaches 80, a new heal / damage is applied.",
 				},
 				GetGameMode =
@@ -11579,7 +10104,7 @@ a_Player:OpenWindow(Window);
 					{
 						{
 							Name = "GameMode",
-							Type = "Globals#eGameMode",
+							Type = "eGameMode",
 						},
 					},
 					Notes = "Returns the player's gamemode. The player may have their gamemode unassigned, in which case they inherit the gamemode from the current {{cWorld|world}}.<br /> <b>NOTE:</b> Instead of comparing the value returned by this function to the gmXXX constants, use the IsGameModeXXX() functions. These functions handle the gamemode inheritance automatically.",
@@ -11867,6 +10392,16 @@ a_Player:OpenWindow(Window);
 					},
 					Notes = "Returns true if the player is currently eating the item in their hand.",
 				},
+				IsFireproof =
+				{
+					Returns =
+					{
+						{
+							Type = "boolean",
+						},
+					},
+					Notes = "Returns true if a player is fireproof. This is when the flag has been explicitly set, or the player is in creative or spectator mode.",
+				},
 				IsFishing =
 				{
 					Returns =
@@ -11971,17 +10506,6 @@ a_Player:OpenWindow(Window);
 				{
 					Notes = "Reloads the player's rank, message visuals and permissions from the {{cRankManager}}, based on the player's current rank.",
 				},
-				MoveTo =
-				{
-					Params =
-					{
-						{
-							Name = "NewPosition",
-							Type = "Vector3d",
-						},
-					},
-					Notes = "Tries to move the player into the specified position.",
-				},
 				OpenWindow =
 				{
 					Params =
@@ -12061,7 +10585,7 @@ a_Player:OpenWindow(Window);
 							Type = "string",
 						},
 					},
-					Notes = "Sends the specified message to the player (shows above action bar, doesn't show for < 1.8 clients).",
+					Notes = "Sends the specified message to the player (shows above action bar).",
 				},
 				SendBlocksAround =
 				{
@@ -12208,7 +10732,7 @@ a_Player:OpenWindow(Window);
 							Type = "string",
 						},
 					},
-					Notes = "Sends the specified message to the player (doesn't show for < 1.8 clients).",
+					Notes = "Sends the specified message to the player.",
 				},
 				SetBedPos =
 				{
@@ -12257,6 +10781,12 @@ a_Player:OpenWindow(Window);
 							Type = "number",
 						},
 					},
+					Returns =
+					{
+						{
+							Type = "boolean",
+						},
+					},
 					Notes = "Sets the current amount of experience (and indirectly, the XP level).",
 				},
 				SetCustomName =
@@ -12269,6 +10799,17 @@ a_Player:OpenWindow(Window);
 						},
 					},
 					Notes = "Sets the custom name for this player. If you want to disable the custom name, simply set an empty string. The custom name will be used in the tab-list, in the player nametag and in the tab-completion.",
+				},
+				SetDraggingItem =
+				{
+					Params =
+					{
+						{
+							Name = "Item",
+							Type = "cItem",
+						},
+					},
+					Notes = "Sets the item that the player is dragging in a UI window. If no UI window is open, this function does nothing."
 				},
 				SetFlying =
 				{
@@ -12314,17 +10855,6 @@ a_Player:OpenWindow(Window);
 					},
 					Notes = "Sets the food level (number of half-drumsticks on-screen)",
 				},
-				SetFoodPoisonedTicksRemaining =
-				{
-					Params =
-					{
-						{
-							Name = "FoodPoisonedTicksRemaining",
-							Type = "number",
-						},
-					},
-					Notes = "Sets the number of ticks remaining for food poisoning. Doesn't send foodpoisoning effect to the client, use FoodPoison() for that.",
-				},
 				SetFoodSaturationLevel =
 				{
 					Params =
@@ -12353,7 +10883,7 @@ a_Player:OpenWindow(Window);
 					{
 						{
 							Name = "NewGameMode",
-							Type = "Globals#eGameMode",
+							Type = "eGameMode",
 						},
 					},
 					Notes = "Sets the gamemode for the player. The new gamemode overrides the world's default gamemode, unless it is set to gmInherit.",
@@ -12672,7 +11202,7 @@ a_Player:OpenWindow(Window);
 					{
 						{
 							Name = "PlayerUUID",
-							Type = "string",
+							Type = "cUUID",
 						},
 						{
 							Name = "CallbackFunction",
@@ -12993,6 +11523,17 @@ a_Player:OpenWindow(Window);
 				SaveAllChunks =
 				{
 					Notes = "Saves all the chunks in all the worlds. Note that the saving is queued on each world's tick thread and this functions returns before the chunks are actually saved.",
+				},
+				SetSavingEnabled =
+				{
+					Params =
+					{
+						{
+							Name = "SavingEnabled",
+							Type = "boolean",
+						},
+					},
+					Notes = "Sets whether saving chunk data is enabled for all worlds. If disabled, dirty chunks will stay in memory forever, which can cause performance and stability issues.",
 				},
 			},
 			AdditionalInfo =
@@ -13384,6 +11925,25 @@ end
 					},
 					Notes = "Returns true if the specified player is queued to be transferred to a World.",
 				},
+				RegisterForgeMod =
+				{
+					Params =
+					{
+						{
+							Name = "ModName",
+							Type = "string",
+						},
+						{
+							Name = "ModVersion",
+							Type = "string",
+						},
+						{
+							Name = "ProtocolVersionNumber",
+							Type = "number",
+						},
+					},
+					Notes = "Add a Forge mod name/version to the server ping list.",
+				},
 				SetMaxPlayers =
 				{
 					Params =
@@ -13404,6 +11964,21 @@ end
 						},
 					},
 					Notes = "Returns true iff the server is set to authenticate players (\"online mode\").",
+				},
+				UnregisterForgeMod =
+				{
+					Params =
+					{
+						{
+							Name = "ModName",
+							Type = "string",
+						},
+						{
+							Name = "ProtocolVersionNumber",
+							Type = "number",
+						},
+					},
+					Notes = "Remove a Forge mod name/version from the server ping list.",
 				},
 			},
 		},
@@ -13932,6 +12507,135 @@ end
 				},
 			},
 		},
+		cUUID =
+		{
+			Desc = [[
+				Class representing a Universally Unique Identifier.
+				Note that all Cuberite's API functions that take a cUUID parameter will also
+				accept a string in its place, as long as that string can be converted to a cUUID
+				(using the {{#FromString_1|cUUID:FromString}} function).
+			]],
+			Functions =
+			{
+				constructor =
+				{
+					Returns =
+					{
+						{
+							Type = "cUUID",
+						},
+					},
+					Notes = "Constructs a nil-valued UUID (all zeros)",
+				},
+				Compare =
+				{
+					Params =
+					{
+						{
+							Name = "Other",
+							Type = "cUUID",
+						},
+					},
+					Returns =
+					{
+						{
+							Type = "number",
+						},
+					},
+					Notes = [[
+						Compares this UUID with the specified Other UUID, Returns:
+							0 when equal to Other,
+							< 0 when less than Other,
+							> 0 when greater than Other
+					]],
+				},
+				IsNil =
+				{
+					Returns =
+					{
+						{
+							Type = "boolean",
+						},
+					},
+					Notes = "Returns true if this contains the \"nil\" UUID with all bits set to 0",
+				},
+				FromString =
+				{
+					Params =
+					{
+						{
+							Name = "StringUUID",
+							Type = "string",
+						},
+					},
+					Returns =
+					{
+						{
+							Type = "boolean",
+						},
+					},
+					Notes = "Tries to interpret the string as a short or long form UUID and assign from it.	On error, returns false and does not set the value.",
+				},
+				ToShortString =
+				{
+					Returns =
+					{
+						{
+							Type = "string",
+						},
+					},
+					Notes = "Converts the UUID to a short form string (i.e without dashes).",
+				},
+				ToLongString =
+				{
+					Returns =
+					{
+						{
+							Type = "string",
+						},
+					},
+					Notes = "Converts the UUID to a long form string (i.e with dashes).",
+				},
+				Version =
+				{
+					Returns =
+					{
+						{
+							Type = "number",
+						},
+					},
+					Notes = "Returns the version number of the UUID.",
+				},
+				Variant =
+				{
+					Returns =
+					{
+						{
+							Type = "number",
+						},
+					},
+					Notes = "Returns the variant number of the UUID",
+				},
+				GenerateVersion3 =
+				{
+					IsStatic = true,
+					Params =
+					{
+						{
+							Name = "Name",
+							Type = "string",
+						},
+					},
+					Returns =
+					{
+						{
+							Type = "cUUID",
+						},
+					},
+					Notes = "Generates a version 3, variant 1 UUID based on the md5 hash of Name."
+				},
+			},
+		},
 		cWebPlugin =
 		{
 			Desc = "",
@@ -14182,6 +12886,249 @@ end
 			},  -- ConstantGroups
 		},  -- cWindow
 
+		EffectID =
+		{
+			Desc = [[
+				An enumeration of sound and particle effects which can be used with
+				{{cWorld#BroadcastSoundParticleEffect|BroadcastSoundParticleEffect}}.
+			]],
+			Constants =
+			{
+				SFX_RANDOM_DISPENSER_DISPENSE =
+				{
+					Notes = "Sound of droper/dispenser releasing an item",
+				},
+				SFX_RANDOM_DISPENSER_DISPENSE_FAIL =
+				{
+					Notes = "Sound of a droper/dispenser activated without items",
+				},
+				SFX_RANDOM_DISPENSER_SHOOT =
+				{
+					Notes = "Sound of a dispenser shooting",
+				},
+				SFX_RANDOM_ENDER_EYE_LAUNCH =
+				{
+					Notes = "Sound of an ender eye launch"
+				},
+				SFX_RANDOM_FIREWORK_SHOT =
+				{
+					Notes = "Sound of a firework shot",
+				},
+				SFX_RANDOM_IRON_DOOR_OPEN =
+				{
+					Notes = "Sound of an iron door opening",
+				},
+				SFX_RANDOM_WOODEN_DOOR_OPEN =
+				{
+					Notes = "Sound of a wooden door opening"
+				},
+				SFX_RANDOM_WOODEN_TRAPDOOR_OPEN =
+				{
+					Notes = "Sound of a wooden trapdoor opening"
+				},
+				SFX_RANDOM_FENCE_GATE_OPEN =
+				{
+					Notes = "Sound of a fence gate opening",
+				},
+				SFX_RANDOM_FIRE_EXTINGUISH =
+				{
+					Notes = "Sound of a fire extinguishing",
+				},
+				SFX_RANDOM_PLAY_MUSIC_DISC =
+				{
+					Notes = "Starts playing a music disc. Needs an accompanting music disc ID",
+				},
+				SFX_RANDOM_IRON_DOOR_CLOSE =
+				{
+					Notes = "Sound of an iron door closing",
+				},
+				SFX_RANDOM_WOODEN_DOOR_CLOSE =
+				{
+					Notes = "Sound of a wooden door closing",
+				},
+				SFX_RANDOM_WOODEN_TRAPDOOR_CLOSE =
+				{
+					Notes = "Sound of a trapdoor closing",
+				},
+				SFX_RANDOM_FENCE_GATE_CLOSE =
+				{
+					Notes = "Sound of a fence gate closing",
+				},
+				SFX_MOB_GHAST_WARN =
+				{
+					Notes = "Sound of a ghast warning cry",
+				},
+				SFX_MOB_GHAST_SHOOT =
+				{
+					Notes = "Sound of a ghast shooting",
+				},
+				SFX_MOB_ENDERDRAGON_SHOOT =
+				{
+					Notes = "Sound of the enderdragon shooting",
+				},
+				SFX_MOB_BLAZE_SHOOT =
+				{
+					Notes = "Sound of a blaze shooting",
+				},
+				SFX_MOB_ZOMBIE_WOOD =
+				{
+					Notes = "Sound of a zombie attacking a wooden door",
+				},
+				SFX_MOB_ZOMBIE_METAL =
+				{
+					Notes = "Sound of a zombie attacking a metal door",
+				},
+				SFX_MOB_ZOMBIE_WOOD_BREAK =
+				{
+					Notes = "Sound of a zombie breaking a wooden door",
+				},
+				SFX_MOB_WITHER_BREAK_BLOCK =
+				{
+					Notes = "Sound of a wither breaking blocks",
+				},
+				SFX_MOB_WITHER_SPAWN =
+				{
+					Notes = "Sound of a wither spawning",
+				},
+				SFX_MOB_WITHER_SHOOT =
+				{
+					Notes = "Sound of a wither shooting",
+				},
+				SFX_MOB_BAT_TAKEOFF =
+				{
+					Notes = "Sound of a bat taking off",
+				},
+				SFX_MOB_ZOMBIE_INFECT =
+				{
+					Notes = "Sound of a zombie infecting a villager",
+				},
+				SFX_MOB_ZOMBIE_UNFECT =
+				{
+					Notes = "Sound of a zombie villager converting to villager",
+				},
+				SFX_MOB_ENDERDRAGON_DEATH =
+				{
+					Notes = "Sound of the dragon releasing dragon breath",
+				},
+				SFX_RANDOM_ANVIL_BREAK =
+				{
+					Notes = "Sound of an anvil breaking",
+				},
+				SFX_RANDOM_ANVIL_USE =
+				{
+					Notes = "Sound of using an anvil",
+				},
+				SFX_RANDOM_ANVIL_LAND =
+				{
+					Notes = "Sound of a falling anvil landing",
+				},
+				SFX_RANDOM_PORTAL_TRAVEL =
+				{
+					Notes = "Sound of travelling through a portal",
+				},
+				SFX_RANDOM_CHORUS_FLOWER_GROW =
+				{
+					Notes = "Sound of a growing chorus flower",
+				},
+				SFX_RANDOM_CHORUS_FLOWER_DEATH =
+				{
+					Notes = "Sound of a dieing chorus flower",
+				},
+				SFX_RANDOM_BREWING_STAND_BREW =
+				{
+					Notes = "Sound of an active brewing stand",
+				},
+				SFX_RANDOM_IRON_TRAPDOOR_OPEN =
+				{
+					Notes = "Sound of an iron trapdoor opening",
+				},
+				SFX_RANDOM_IRON_TRAPDOOR_CLOSE =
+				{
+					Notes = "Sound of an iron trapdoor closing",
+				},
+				PARTICLE_SMOKE =
+				{
+					Notes = "Spawns 10 smoke particles, e.g. from a fire.  Needs a {{SmokeDirection|SmokeDirection}}",
+				},
+				PARTICLE_BLOCK_BREAK =
+				{
+					Notes = "Block break particle and sound.  Needs a BlockID",
+				},
+				PARTICLE_SPLASH_POTION =
+				{
+					Notes = "Splash potion particles and glass break sound.  Needs a PotionID",
+				},
+				PARTICLE_EYE_OF_ENDER =
+				{
+					Notes = "Eye of ender entity break particles and sound",
+				},
+				PARTICLE_MOBSPAWN =
+				{
+					Notes = "Mob spawn particle effect: smoke and flames",
+				},
+				PARTICLE_HAPPY_VILLAGER =
+				{
+					Notes = "Happy villager/bonemeal particles.  Number of particles may be given or 0 for default of 15",
+				},
+				PARTICLE_DRAGON_BREATH =
+				{
+					Notes = "Dragon breath particle effect",
+				},
+				PARTICLE_END_GATEWAY_SPAWN =
+				{
+					Notes = "End gateway spawn particle effect",
+				},
+				PARTICLE_ENDERDRAGON_GROWL =
+				{
+					Notes = "Ender dragon growl particle effect",
+				},
+			},
+		},
+		SmokeDirection =
+		{
+			Desc = [[
+				An enumeration of the direction spawned smoke will drift in as it floats up.
+			]],
+			Constants =
+			{
+				SOUTH_EAST =
+				{
+					Notes = "Smoke drifts south-east",
+				},
+				SOUTH =
+				{
+					Notes = "Smoke drifts south",
+				},
+				SOUTH_WEST =
+				{
+					Notes = "Smoke drifts south-west",
+				},
+				EAST =
+				{
+					Notes = "Smoke drifts east",
+				},
+				CENTRE =
+				{
+					Notes = "Smoke does not drift",
+				},
+				WEST =
+				{
+					Notes = "Smoke drifts west",
+				},
+				NORTH_EAST =
+				{
+					Notes = "Smoke drifts north-east",
+				},
+				NORTH =
+				{
+					Notes = "Smoke drifts north",
+				},
+				NORTH_WEST =
+				{
+					Notes = "Smoke drifts west",
+				},
+			}
+		},
 		Globals =
 		{
 			Desc = [[
@@ -14951,7 +13898,7 @@ end
 					{
 						{
 							Name = "BiomeType",
-							Type = "Globals#EMCSBiome",
+							Type = "EMCSBiome",
 						},
 					},
 					Notes = "Converts a string representation to a {{Globals#BiomeTypes|BiomeType}} enumerated value. Returns biInvalidBiome if the input is not a recognized biome.",
@@ -14969,7 +13916,7 @@ end
 					{
 						{
 							Name = "DamageType",
-							Type = "Globals#eDamageType",
+							Type = "eDamageType",
 						},
 					},
 					Notes = "Converts a string representation to a {{Globals#DamageType|DamageType}} enumerated value. Returns -1 if the inupt is not a recognized damage type.",
@@ -14987,7 +13934,7 @@ end
 					{
 						{
 							Name = "Dimension",
-							Type = "Globals#eDimension",
+							Type = "eDimension",
 						},
 					},
 					Notes = "Converts a string representation to a {{Globals#eDimension|eDimension}} enumerated value. Returns dimNotSet if the input is not a recognized dimension.",
@@ -15068,6 +14015,130 @@ end
 			},
 			Constants =
 			{
+				caLeftClick =
+				{
+					Notes = "Left click on a slot",
+				},
+				caRightClick =
+				{
+					Notes = "Right click on a slot",
+				},
+				caShiftLeftClick =
+				{
+					Notes = "Shift + left click on a slot",
+				},
+				caShiftRightClick =
+				{
+					Notes = "Shift + right click on a slot",
+				},
+				caNumber1 =
+				{
+					Notes = "Number key 1",
+				},
+				caNumber2 =
+				{
+					Notes = "Number key 2",
+				},
+				caNumber3 =
+				{
+					Notes = "Number key 3",
+				},
+				caNumber4 =
+				{
+					Notes = "Number key 4",
+				},
+				caNumber5 =
+				{
+					Notes = "Number key 5",
+				},
+				caNumber6 =
+				{
+					Notes = "Number key 6",
+				},
+				caNumber7 =
+				{
+					Notes = "Number key 7",
+				},
+				caNumber8 =
+				{
+					Notes = "Number key 8",
+				},
+				caNumber9 =
+				{
+					Notes = "Number key 9",
+				},
+				caMiddleClick =
+				{
+					Notes = "Middle click, only valid for creative players",
+				},
+				caDropKey =
+				{
+					Notes = "Drop a single item",
+				},
+				caCtrlDropKey =
+				{
+					Notes = "Drop a full stack",
+				},
+				caLeftClickOutside =
+				{
+					Notes = "Left click outside of inventory",
+				},
+				caRightClickOutside =
+				{
+					Notes = "Right click outside of inventory",
+				},
+				caLeftClickOutsideHoldNothing =
+				{
+					Notes = "Left click outside inventory holding nothing",
+				},
+				caRightClickOutsideHoldNothing =
+				{
+					Notes = "Right click outside inventory holding nothing",
+				},
+				caLeftPaintBegin =
+				{
+					Notes = "Begining of left click paint drag action",
+				},
+				caRightPaintBegin =
+				{
+					Notes = "Begining of right click paint drag action",
+				},
+				caMiddlePaintBegin =
+				{
+					Notes = "Begining of middle click paint drag action, only valid for creative players",
+				},
+				caLeftPaintProgress =
+				{
+					Notes = "Add slot for left click paint drag action",
+				},
+				caRightPaintProgress =
+				{
+					Notes = "Add slot for right click paint drag action",
+				},
+				caMiddlePaintProgress =
+				{
+					Notes = "Add slot for middle click paint drag action, only valid for creative players",
+				},
+				caLeftPaintEnd =
+				{
+					Notes = "End of left click paint drag action",
+				},
+				caRightPaintEnd =
+				{
+					Notes = "End of right click paint drag action",
+				},
+				caMiddlePaintEnd =
+				{
+					Notes = "End of middle click paint drag action, only valid for creative players",
+				},
+				caDblClick =
+				{
+					Notes = "Double click action",
+				},
+				caUnknown =
+				{
+					Notes = "Unknown click action"
+				},
 				E_BLOCK_ACACIA_DOOR =
 				{
 					Notes = "The blocktype for acacia door"
@@ -15184,6 +14255,10 @@ end
 				{
 					Notes = "The blocktype for birch wood stairs"
 				},
+				E_BLOCK_BLACK_GLAZED_TERRACOTTA =
+				{
+					Notes = "The blocktype for black terracotta"
+				},
 				E_BLOCK_BLACK_SHULKER_BOX =
 				{
 					Notes = "The blocktype for black shulker box"
@@ -15195,6 +14270,10 @@ end
 				E_BLOCK_BLOCK_OF_REDSTONE =
 				{
 					Notes = "The blocktype for block of redstone"
+				},
+				E_BLOCK_BLUE_GLAZED_TERRACOTTA =
+				{
+					Notes = "The blocktype for blue glazed terracotta"
 				},
 				E_BLOCK_BLUE_SHULKER_BOX =
 				{
@@ -15219,6 +14298,10 @@ end
 				E_BLOCK_BRICK_STAIRS =
 				{
 					Notes = "The blocktype for brick stairs"
+				},
+				E_BLOCK_BROWN_GLAZED_TERRACOTTA =
+				{
+					Notes = "The blocktype for brown glazed terracotta"
 				},
 				E_BLOCK_BROWN_MUSHROOM =
 				{
@@ -15328,6 +14411,14 @@ end
 				{
 					Notes = "The blocktype for command block"
 				},
+				E_BLOCK_CONCRETE =
+				{
+					Notes = "The blocktype for concrete"
+				},
+				E_BLOCK_CONCRETE_POWDER =
+				{
+					Notes = "The blocktype for concrete powder"
+				},
 				E_BLOCK_CRAFTING_TABLE =
 				{
 					Notes = "The blocktype for crafting table"
@@ -15335,6 +14426,10 @@ end
 				E_BLOCK_CROPS =
 				{
 					Notes = "The blocktype for crops"
+				},
+				E_BLOCK_CYAN_GLAZED_TERRACOTTA =
+				{
+					Notes = "The blocktype for cyan glazed terracotta"
 				},
 				E_BLOCK_CYAN_SHULKER_BOX =
 				{
@@ -15512,9 +14607,17 @@ end
 				{
 					Notes = "The blocktype for gravel"
 				},
+				E_BLOCK_GRAY_GLAZED_TERRACOTTA =
+				{
+					Notes = "The blocktype for gray glazed terracotta"
+				},
 				E_BLOCK_GRAY_SHULKER_BOX =
 				{
 					Notes = "The blocktype for gray shulker box"
+				},
+				E_BLOCK_GREEN_GLAZED_TERRACOTTA =
+				{
+					Notes = "The blocktype for green glazed terracotta"
 				},
 				E_BLOCK_GREEN_SHULKER_BOX =
 				{
@@ -15628,9 +14731,17 @@ end
 				{
 					Notes = "The blocktype for lever"
 				},
+				E_BLOCK_LIGHT_BLUE_GLAZED_TERRACOTTA =
+				{
+					Notes = "The blocktype for light blue glazed terracotta"
+				},
 				E_BLOCK_LIGHT_BLUE_SHULKER_BOX =
 				{
 					Notes = "The blocktype for light blue shulker box"
+				},
+				E_BLOCK_LIGHT_GRAY_GLAZED_TERRACOTTA =
+				{
+					Notes = "The blocktype for light gray glazed terracotta"
 				},
 				E_BLOCK_LIGHT_GRAY_SHULKER_BOX =
 				{
@@ -15644,6 +14755,10 @@ end
 				{
 					Notes = "The blocktype for lily pad"
 				},
+				E_BLOCK_LIME_GLAZED_TERRACOTTA =
+				{
+					Notes = "The blocktype for lime glazed terracotta"
+				},
 				E_BLOCK_LIME_SHULKER_BOX =
 				{
 					Notes = "The blocktype for lime shulker box"
@@ -15655,6 +14770,10 @@ end
 				E_BLOCK_LOG =
 				{
 					Notes = "The blocktype for log"
+				},
+				E_BLOCK_MAGENTA_GLAZED_TERRACOTTA =
+				{
+					Notes = "The blocktype for magenta glazed terracotta"
 				},
 				E_BLOCK_MAGENTA_SHULKER_BOX =
 				{
@@ -15760,6 +14879,10 @@ end
 				{
 					Notes = "The blocktype for obsidian"
 				},
+				E_BLOCK_ORANGE_GLAZED_TERRACOTTA =
+				{
+					Notes = "The blocktype for orange glazed terracota"
+				},
 				E_BLOCK_ORANGE_SHULKER_BOX =
 				{
 					Notes = "The blocktype for orange shulker box"
@@ -15767,6 +14890,10 @@ end
 				E_BLOCK_PACKED_ICE =
 				{
 					Notes = "The blocktype for packed ice"
+				},
+				E_BLOCK_PINK_GLAZED_TERRACOTTA =
+				{
+					Notes = "The blocktype for pink glazed terracotta"
 				},
 				E_BLOCK_PINK_SHULKER_BOX =
 				{
@@ -15807,6 +14934,10 @@ end
 				E_BLOCK_PUMPKIN_STEM =
 				{
 					Notes = "The blocktype for pumpkin stem"
+				},
+				E_BLOCK_PURPLE_GLAZED_TERRACOTTA =
+				{
+					Notes = "The blocktype for purple glazed terracotta"
 				},
 				E_BLOCK_PURPLE_SHULKER_BOX =
 				{
@@ -15879,6 +15010,10 @@ end
 				E_BLOCK_REDSTONE_WIRE =
 				{
 					Notes = "The blocktype for redstone wire"
+				},
+				E_BLOCK_RED_GLAZED_TERRACOTTA =
+				{
+					Notes = "The blocktype for red glazed terracotta"
 				},
 				E_BLOCK_RED_MUSHROOM =
 				{
@@ -16108,6 +15243,10 @@ end
 				{
 					Notes = "The blocktype for water"
 				},
+				E_BLOCK_WHITE_GLAZED_TERRACOTTA =
+				{
+					Notes = "The blocktype for white glazed terracotta"
+				},
 				E_BLOCK_WHITE_SHULKER_BOX =
 				{
 					Notes = "The blocktype for white shulker box"
@@ -16143,6 +15282,10 @@ end
 				E_BLOCK_YELLOW_FLOWER =
 				{
 					Notes = "The blocktype for yellow flower"
+				},
+				E_BLOCK_YELLOW_GLAZED_TERRACOTTA =
+				{
+					Notes = "The blocktype for yellow glazed terracotta"
 				},
 				E_BLOCK_YELLOW_SHULKER_BOX =
 				{
@@ -16664,6 +15807,10 @@ end
 				{
 					Notes = "The itemtype for lead"
 				},
+				E_ITEM_LEASH =
+				{
+					Notes = "The itemtype for lead (E_ITEM_LEAD synonym)"
+				},
 				E_ITEM_LEATHER =
 				{
 					Notes = "The itemtype for leather"
@@ -17107,6 +16254,138 @@ end
 				DIG_STATUS_SWAP_ITEM_IN_HAND =
 				{
 					Notes = "The player has swapped their held item with the item in their offhand slot (1.9)",
+				},
+				E_META_BIG_FLOWER_TOP =
+				{
+					Notes = "The metadata of a big flower block that indicates it is the top block.",
+				},
+				E_META_CONCRETE_BLACK =
+				{
+					Notes = "A flag in the metadata of concete that indicates that the concrete is black.",
+				},
+				E_META_CONCRETE_BLUE =
+				{
+					Notes = "A flag in the metadata of concete that indicates that the concrete is blue.",
+				},
+				E_META_CONCRETE_BROWN =
+				{
+					Notes = "A flag in the metadata of concete that indicates that the concrete is brown.",
+				},
+				E_META_CONCRETE_CYAN =
+				{
+					Notes = "A flag in the metadata of concete that indicates that the concrete is cyan.",
+				},
+				E_META_CONCRETE_GRAY =
+				{
+					Notes = "A flag in the metadata of concete that indicates that the concrete is gray.",
+				},
+				E_META_CONCRETE_GREEN =
+				{
+					Notes = "A flag in the metadata of concete that indicates that the concrete is green.",
+				},
+				E_META_CONCRETE_LIGHTBLUE =
+				{
+					Notes = "A flag in the metadata of concete that indicates that the concrete is light blue.",
+				},
+				E_META_CONCRETE_LIGHTGRAY =
+				{
+					Notes = "A flag in the metadata of concete that indicates that the concrete is light gray.",
+				},
+				E_META_CONCRETE_LIGHTGREEN =
+				{
+					Notes = "A flag in the metadata of concete that indicates that the concrete is light green.",
+				},
+				E_META_CONCRETE_MAGENTA =
+				{
+					Notes = "A flag in the metadata of concete that indicates that the concrete is magenta.",
+				},
+				E_META_CONCRETE_ORANGE =
+				{
+					Notes = "A flag in the metadata of concete that indicates that the concrete is orange.",
+				},
+				E_META_CONCRETE_PINK =
+				{
+					Notes = "A flag in the metadata of concete that indicates that the concrete is pink.",
+				},
+				E_META_CONCRETE_POWDER_BLACK =
+				{
+					Notes = "A flag in the metadata of concete powder that indicates that the concrete powder is black.",
+				},
+				E_META_CONCRETE_POWDER_BLUE =
+				{
+					Notes = "A flag in the metadata of concete powder that indicates that the concrete powder is blue.",
+				},
+				E_META_CONCRETE_POWDER_BROWN =
+				{
+					Notes = "A flag in the metadata of concete powder that indicates that the concrete powder is brown.",
+				},
+				E_META_CONCRETE_POWDER_CYAN =
+				{
+					Notes = "A flag in the metadata of concete powder that indicates that the concrete powder is cyan.",
+				},
+				E_META_CONCRETE_POWDER_GRAY =
+				{
+					Notes = "A flag in the metadata of concete powder that indicates that the concrete powder is gray.",
+				},
+				E_META_CONCRETE_POWDER_GREEN =
+				{
+					Notes = "A flag in the metadata of concete powder that indicates that the concrete powder is green.",
+				},
+				E_META_CONCRETE_POWDER_LIGHTBLUE =
+				{
+					Notes = "A flag in the metadata of concete powder that indicates that the concrete powder is light blue.",
+				},
+				E_META_CONCRETE_POWDER_LIGHTGRAY =
+				{
+					Notes = "A flag in the metadata of concete powder that indicates that the concrete powder is light gray.",
+				},
+				E_META_CONCRETE_POWDER_LIGHTGREEN =
+				{
+					Notes = "A flag in the metadata of concete powder that indicates that the concrete powder is light green.",
+				},
+				E_META_CONCRETE_POWDER_MAGENTA =
+				{
+					Notes = "A flag in the metadata of concete powder that indicates that the concrete powder is magenta.",
+				},
+				E_META_CONCRETE_POWDER_ORANGE =
+				{
+					Notes = "A flag in the metadata of concete powder that indicates that the concrete powder is orange.",
+				},
+				E_META_CONCRETE_POWDER_PINK =
+				{
+					Notes = "A flag in the metadata of concete powder that indicates that the concrete powder is pink.",
+				},
+				E_META_CONCRETE_POWDER_PURPLE =
+				{
+					Notes = "A flag in the metadata of concete powder that indicates that the concrete powder is purple.",
+				},
+				E_META_CONCRETE_POWDER_RED =
+				{
+					Notes = "A flag in the metadata of concete powder that indicates that the concrete powder is red.",
+				},
+				E_META_CONCRETE_POWDER_WHITE =
+				{
+					Notes = "A flag in the metadata of concete powder that indicates that the concrete powder is white.",
+				},
+				E_META_CONCRETE_POWDER_YELLOW =
+				{
+					Notes = "A flag in the metadata of concete powder that indicates that the concrete powder is yellow.",
+				},
+				E_META_CONCRETE_PURPLE =
+				{
+					Notes = "A flag in the metadata of concete that indicates that the concrete is purple.",
+				},
+				E_META_CONCRETE_RED =
+				{
+					Notes = "A flag in the metadata of concete that indicates that the concrete is red.",
+				},
+				E_META_CONCRETE_WHITE =
+				{
+					Notes = "A flag in the metadata of concete that indicates that the concrete is white.",
+				},
+				E_META_CONCRETE_YELLOW =
+				{
+					Notes = "A flag in the metadata of concete that indicates that the concrete is yellow.",
 				},
 				E_META_DROPSPENSER_ACTIVATED =
 				{
@@ -17698,6 +16977,24 @@ end
 					},
 					Notes = "Returns true if the specified item type is any kind of a hoe.",
 				},
+				IsHorseArmor=
+				{
+					IsStatic = true,
+					Params =
+					{
+						{
+							Name = "ItemType",
+							Type = "number",
+						},
+					},
+					Returns =
+					{
+						{
+							Type = "boolean",
+						},
+					},
+					Notes = "Returns true if the specified item type is any kind of a horse armor.",
+				},
 				IsLeggings =
 				{
 					IsStatic = true,
@@ -17828,7 +17125,7 @@ end
 		{
 			Desc = [[
 				This class provides an interface to the XML parser,
-				{{http://matthewwild.co.uk/projects/luaexpat/|LuaExpat}}. It provides a SAX interface with an
+				{{https://matthewwild.co.uk/projects/luaexpat/|LuaExpat}}. It provides a SAX interface with an
 				incremental XML parser.</p>
 				<p>
 				With an event-based API like SAX the XML document can be fed to the parser in chunks, and the
@@ -17837,7 +17134,7 @@ end
 				parsing of huge documents can benefit from this piecemeal operation.</p>
 				<p>
 				See the online
-				{{http://matthewwild.co.uk/projects/luaexpat/manual.html#parser|LuaExpat documentation}} for details
+				{{https://matthewwild.co.uk/projects/luaexpat/manual.html#parser|LuaExpat documentation}} for details
 				on how to work with this parser. The code examples below should provide some basic help, too.
 			]],
 			Functions =
@@ -17889,7 +17186,7 @@ end
 						The callbacks table passed to the new() function specifies the Lua functions that the parser
 						calls upon various events. The following table lists the most common functions used, for a
 						complete list see the online
-						{{http://matthewwild.co.uk/projects/luaexpat/manual.html#parser|LuaExpat documentation}}.</p>
+						{{https://matthewwild.co.uk/projects/luaexpat/manual.html#parser|LuaExpat documentation}}.</p>
 						<table>
 						<tr><th>Function name</th><th>Parameters</th><th>Notes</th></tr>
 						<tr><td>CharacterData</td><td>Parser, string</td><td>Called when the parser recognizes a raw string inside the element</td></tr>
@@ -17903,7 +17200,7 @@ end
 					Contents = [[
 						The XMLParser object returned by lxp.new provides the functions needed to parse the XML. The
 						following list provides the most commonly used ones, for a complete list see the online
-						{{http://matthewwild.co.uk/projects/luaexpat/manual.html#parser|LuaExpat documentation}}.
+						{{https://matthewwild.co.uk/projects/luaexpat/manual.html#parser|LuaExpat documentation}}.
 						<ul>
 							<li>close() - closes the parser, freeing all memory used by it.</li>
 							<li>getCallbacks() - returns the callbacks table for this parser.</li>
@@ -18107,7 +17404,7 @@ end
 			Desc = [[
 				This class represents the tolua bridge between the Lua API and Cuberite. It supports some low
 				level operations and queries on the objects. See also the tolua++'s documentation at
-				{{http://www.codenix.com/~tolua/tolua++.html#utilities}}. Normally you shouldn't use any of these
+				{{https://www8.cs.umu.se/kurser/TDBD12/VT04/lab/lua/tolua++.html#utilities}}. Normally you shouldn't use any of these
 				functions except for type()
 			]],
 			Functions =
@@ -18261,4 +17558,3 @@ end
 		"__.*__",
 	},
 }
-

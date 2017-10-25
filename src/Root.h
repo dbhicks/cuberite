@@ -5,16 +5,14 @@
 #include "Protocol/MojangAPI.h"
 #include "HTTP/HTTPServer.h"
 #include "Defines.h"
+#include "FunctionRef.h"
 #include "RankManager.h"
-#include <thread>
-#include <atomic>
 
 
 
 
 
 // fwd:
-class cThread;
 class cMonsterConfig;
 class cBrewingRecipes;
 class cCraftingRecipes;
@@ -28,9 +26,10 @@ class cCommandOutputCallback;
 class cCompositeChat;
 class cSettingsRepositoryInterface;
 class cDeadlockDetect;
+class cUUID;
 
-typedef cItemCallback<cPlayer> cPlayerListCallback;
-typedef cItemCallback<cWorld>  cWorldListCallback;
+using cPlayerListCallback =  cFunctionRef<bool(cPlayer &)>;
+using cWorldListCallback  =  cFunctionRef<bool(cWorld  &)>;
 
 namespace Json
 {
@@ -78,7 +77,7 @@ public:
 	// tolua_end
 
 	/** Calls the callback for each world; returns true if the callback didn't abort (return true) */
-	bool ForEachWorld(cWorldListCallback & a_Callback);  // >> Exported in ManualBindings <<
+	bool ForEachWorld(cWorldListCallback a_Callback);  // >> Exported in ManualBindings <<
 
 	/** Writes chunkstats, for each world and totals, to the output callback */
 	void LogChunkStats(cCommandOutputCallback & a_Output);
@@ -126,7 +125,7 @@ public:
 	void KickUser(int a_ClientID, const AString & a_Reason);
 
 	/** Called by cAuthenticator to auth the specified user */
-	void AuthenticateUser(int a_ClientID, const AString & a_Name, const AString & a_UUID, const Json::Value & a_Properties);
+	void AuthenticateUser(int a_ClientID, const AString & a_Name, const cUUID & a_UUID, const Json::Value & a_Properties);
 
 	/** Executes commands queued in the command queue */
 	void TickCommands(void);
@@ -137,17 +136,20 @@ public:
 	/** Saves all chunks in all worlds */
 	void SaveAllChunks(void);  // tolua_export
 
+	/** Sets whether saving chunks is enabled in all worlds (overrides however the worlds were already set) */
+	void SetSavingEnabled(bool a_SavingEnabled);  // tolua_export
+
 	/** Calls the callback for each player in all worlds */
-	bool ForEachPlayer(cPlayerListCallback & a_Callback);  // >> EXPORTED IN MANUALBINDINGS <<
+	bool ForEachPlayer(cPlayerListCallback a_Callback);  // >> EXPORTED IN MANUALBINDINGS <<
 
 	/** Finds a player from a partial or complete player name and calls the callback - case-insensitive */
-	bool FindAndDoWithPlayer(const AString & a_PlayerName, cPlayerListCallback & a_Callback);  // >> EXPORTED IN MANUALBINDINGS <<
+	bool FindAndDoWithPlayer(const AString & a_PlayerName, cPlayerListCallback a_Callback);  // >> EXPORTED IN MANUALBINDINGS <<
 
 	/** Finds the player over his uuid and calls the callback */
-	bool DoWithPlayerByUUID(const AString & a_PlayerUUID, cPlayerListCallback & a_Callback);  // >> EXPORTED IN MANUALBINDINGS <<
+	bool DoWithPlayerByUUID(const cUUID & a_PlayerUUID, cPlayerListCallback a_Callback);  // >> EXPORTED IN MANUALBINDINGS <<
 
 	/** Finds the player using it's complete username and calls the callback */
-	bool DoWithPlayer(const AString & a_PlayerName, cPlayerListCallback & a_Callback);
+	bool DoWithPlayer(const AString & a_PlayerName, cPlayerListCallback a_Callback);
 
 	/** Send playerlist of all worlds to player */
 	void SendPlayerLists(cPlayer * a_DestPlayer);
@@ -226,7 +228,7 @@ private:
 	void LoadGlobalSettings();
 
 	/** Loads the worlds from settings.ini, creates the worldmap */
-	void LoadWorlds(cSettingsRepositoryInterface & a_Settings, bool a_IsNewIniFile);
+	void LoadWorlds(cDeadlockDetect & a_dd, cSettingsRepositoryInterface & a_Settings, bool a_IsNewIniFile);
 
 	/** Starts each world's life */
 	void StartWorlds(cDeadlockDetect & a_DeadlockDetect);

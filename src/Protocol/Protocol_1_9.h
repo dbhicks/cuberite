@@ -35,18 +35,8 @@ Declares the 1.9 protocol classes:
 	#pragma warning(pop)
 #endif
 
-#include "PolarSSL++/AesCfb128Decryptor.h"
-#include "PolarSSL++/AesCfb128Encryptor.h"
-
-
-
-
-
-// fwd:
-namespace Json
-{
-	class Value;
-}
+#include "mbedTLS++/AesCfb128Decryptor.h"
+#include "mbedTLS++/AesCfb128Encryptor.h"
 
 
 
@@ -96,6 +86,7 @@ public:
 	virtual void SendHideTitle                  (void) override;
 	virtual void SendInventorySlot              (char a_WindowID, short a_SlotNum, const cItem & a_Item) override;
 	virtual void SendKeepAlive                  (UInt32 a_PingID) override;
+	virtual void SendLeashEntity                (const cEntity & a_Entity, const cEntity & a_EntityLeashedTo) override;
 	virtual void SendLogin                      (const cPlayer & a_Player, const cWorld & a_World) override;
 	virtual void SendLoginSuccess               (void) override;
 	virtual void SendMapData                    (const cMap & a_Map, int a_DataStartX, int a_DataStartY) override;
@@ -139,6 +130,7 @@ public:
 	virtual void SendThunderbolt                (int a_BlockX, int a_BlockY, int a_BlockZ) override;
 	virtual void SendTitleTimes                 (int a_FadeInTicks, int a_DisplayTicks, int a_FadeOutTicks) override;
 	virtual void SendTimeUpdate                 (Int64 a_WorldAge, Int64 a_TimeOfDay, bool a_DoDaylightCycle) override;
+	virtual void SendUnleashEntity              (const cEntity & a_Entity) override;
 	virtual void SendUnloadChunk                (int a_ChunkX, int a_ChunkZ) override;
 	virtual void SendUpdateBlockEntity          (cBlockEntity & a_BlockEntity) override;
 	virtual void SendUpdateSign                 (int a_BlockX, int a_BlockY, int a_BlockZ, const AString & a_Line1, const AString & a_Line2, const AString & a_Line3, const AString & a_Line4) override;
@@ -173,6 +165,10 @@ protected:
 	/** State of the protocol. 1 = status, 2 = login, 3 = game */
 	UInt32 m_State;
 
+	/** The current teleport ID, and whether it has been confirmed by the client */
+	bool m_IsTeleportIdConfirmed;
+	UInt32 m_OutstandingTeleportId;
+
 	/** Buffer for the received data */
 	cByteBuffer m_ReceivedData;
 
@@ -186,6 +182,9 @@ protected:
 
 	/** Adds the received (unencrypted) data to m_ReceivedData, parses complete packets */
 	void AddReceivedData(const char * a_Data, size_t a_Size);
+
+	/** Get the packet ID for a given packet */
+	virtual UInt32 GetPacketId(eOutgoingPackets a_Packet) override;
 
 	/** Reads and handles the packet. The packet length and type have already been read.
 	Returns true if the packet was understood, false if it was an unknown packet. */
@@ -341,15 +340,14 @@ public:
 	cProtocol_1_9_4(cClientHandle * a_Client, const AString & a_ServerAddress, UInt16 a_ServerPort, UInt32 a_State);
 
 	// cProtocol_1_9_2 overrides:
-	virtual void SendCollectEntity   (const cEntity & a_Entity, const cPlayer & a_Player, int a_Count) override;
 	virtual void SendChunkData       (int a_ChunkX, int a_ChunkZ, cChunkDataSerializer & a_Serializer) override;
-	virtual void SendEntityEffect    (const cEntity & a_Entity, int a_EffectID, int a_Amplifier, short a_Duration) override;
-	virtual void SendEntityProperties(const cEntity & a_Entity) override;
-	virtual void SendPlayerMaxSpeed  (void) override;
-	virtual void SendTeleportEntity  (const cEntity & a_Entity) override;
 	virtual void SendUpdateSign      (int a_BlockX, int a_BlockY, int a_BlockZ, const AString & a_Line1, const AString & a_Line2, const AString & a_Line3, const AString & a_Line4) override;
 
 	virtual void HandlePacketStatusRequest(cByteBuffer & a_ByteBuffer) override;
+
+protected:
+
+	virtual UInt32 GetPacketId(eOutgoingPackets a_Packet) override;
 
 } ;
 

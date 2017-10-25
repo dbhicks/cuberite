@@ -21,6 +21,7 @@ class cEntity;
 class cBlockEntity;
 class cBoat;
 class cBeaconEntity;
+class cBedEntity;
 class cBrewingstandEntity;
 class cChestEntity;
 class cCommandBlockEntity;
@@ -38,9 +39,6 @@ class cFlowerPotEntity;
 class cFallingBlock;
 class cMinecart;
 class cMinecartWithChest;
-class cMinecartWithFurnace;
-class cMinecartWithTNT;
-class cMinecartWithHopper;
 class cMonster;
 class cPickup;
 class cItemGrid;
@@ -49,15 +47,15 @@ class cTNTEntity;
 class cExpOrb;
 class cHangingEntity;
 class cItemFrame;
+class cLeashKnot;
 class cPainting;
-class cEntityEffect;
 
 
 
 
 
 class cNBTChunkSerializer :
-	public cChunkDataSeparateCollector
+	public cChunkDataCopyCollector
 {
 public:
 	cChunkDef::BiomeMap m_Biomes;
@@ -71,15 +69,12 @@ public:
 	/** Close NBT tags that we've opened */
 	void Finish(void);
 
-	bool IsLightValid(void) const {return m_IsLightValid; }
+	bool IsLightValid(void) const { return m_IsLightValid; }
 
 protected:
 
-	/* From cChunkDataSeparateCollector we inherit:
-	- m_BlockTypes[]
-	- m_BlockMetas[]
-	- m_BlockLight[]
-	- m_BlockSkyLight[] */
+	/* From cChunkDataCopyCollector we inherit:
+	- cChunkData m_Data */
 
 	cFastNBTWriter & m_Writer;
 
@@ -98,6 +93,7 @@ protected:
 	// Block entities:
 	void AddBasicTileEntity   (cBlockEntity *        a_Entity, const char * a_EntityTypeID);
 	void AddBeaconEntity      (cBeaconEntity *       a_Entity);
+	void AddBedEntity         (cBedEntity *          a_Entity);
 	void AddBrewingstandEntity(cBrewingstandEntity * a_Brewingstand);
 	void AddChestEntity       (cChestEntity *        a_Entity, BLOCKTYPE a_ChestType);
 	void AddDispenserEntity   (cDispenserEntity *    a_Entity);
@@ -125,6 +121,7 @@ protected:
 	void AddTNTEntity         (cTNTEntity * a_TNT);
 	void AddExpOrbEntity      (cExpOrb * a_ExpOrb);
 	void AddItemFrameEntity   (cItemFrame * a_ItemFrame);
+	void AddLeashKnotEntity   (cLeashKnot * a_LeashKnot);
 	void AddPaintingEntity    (cPainting * a_Painting);
 
 	void AddMinecartChestContents(cMinecartWithChest * a_Minecart);

@@ -11,7 +11,7 @@ Implements the 1.8 protocol classes:
 #include "json/json.h"
 #include "Protocol_1_8.h"
 #include "ChunkDataSerializer.h"
-#include "PolarSSL++/Sha1Checksum.h"
+#include "mbedTLS++/Sha1Checksum.h"
 #include "Packetizer.h"
 
 #include "../ClientHandle.h"
@@ -22,6 +22,7 @@ Implements the 1.8 protocol classes:
 #include "../StringCompression.h"
 #include "../CompositeChat.h"
 #include "../Statistics.h"
+#include "../UUID.h"
 
 #include "../WorldStorage/FastNBT.h"
 #include "../WorldStorage/EnchantmentSerializer.h"
@@ -38,6 +39,7 @@ Implements the 1.8 protocol classes:
 
 #include "../Mobs/IncludeAllMonsters.h"
 #include "../UI/Window.h"
+#include "../UI/HorseWindow.h"
 
 #include "../BlockEntities/BeaconEntity.h"
 #include "../BlockEntities/CommandBlockEntity.h"
@@ -118,7 +120,11 @@ cProtocol_1_8_0::cProtocol_1_8_0(cClientHandle * a_Client, const AString & a_Ser
 		LOGD("Player at %s connected via BungeeCord", Params[1].c_str());
 		m_ServerAddress = Params[0];
 		m_Client->SetIPString(Params[1]);
-		m_Client->SetUUID(cMojangAPI::MakeUUIDShort(Params[2]));
+
+		cUUID UUID;
+		UUID.FromString(Params[2]);
+		m_Client->SetUUID(UUID);
+
 		m_Client->SetProperties(Params[3]);
 	}
 
@@ -629,6 +635,34 @@ void cProtocol_1_8_0::SendKeepAlive(UInt32 a_PingID)
 
 
 
+void cProtocol_1_8_0::SendLeashEntity(const cEntity & a_Entity, const cEntity & a_EntityLeashedTo)
+{
+	ASSERT(m_State == 3);  // In game mode?
+
+	cPacketizer Pkt(*this, 0x1b);  // Attach Entity packet
+	Pkt.WriteBEUInt32(a_Entity.GetUniqueID());
+	Pkt.WriteBEUInt32(a_EntityLeashedTo.GetUniqueID());
+	Pkt.WriteBool(true);
+}
+
+
+
+
+
+void cProtocol_1_8_0::SendUnleashEntity(const cEntity & a_Entity)
+{
+	ASSERT(m_State == 3);  // In game mode?
+
+	cPacketizer Pkt(*this, 0x1b);  // Attach Entity packet
+	Pkt.WriteBEUInt32(a_Entity.GetUniqueID());
+	Pkt.WriteBEInt32(-1);
+	Pkt.WriteBool(true);
+}
+
+
+
+
+
 void cProtocol_1_8_0::SendLogin(const cPlayer & a_Player, const cWorld & a_World)
 {
 	// Send the Join Game packet:
@@ -639,7 +673,7 @@ void cProtocol_1_8_0::SendLogin(const cPlayer & a_Player, const cWorld & a_World
 		Pkt.WriteBEUInt8(static_cast<UInt8>(a_Player.GetEffectiveGameMode()) | (Server->IsHardcore() ? 0x08 : 0));  // Hardcore flag bit 4
 		Pkt.WriteBEInt8(static_cast<Int8>(a_World.GetDimension()));
 		Pkt.WriteBEUInt8(2);  // TODO: Difficulty (set to Normal)
-		Pkt.WriteBEUInt8(static_cast<UInt8>(Clamp<int>(Server->GetMaxPlayers(), 0, 255)));
+		Pkt.WriteBEUInt8(static_cast<UInt8>(Clamp<size_t>(Server->GetMaxPlayers(), 0, 255)));
 		Pkt.WriteString("default");  // Level type - wtf?
 		Pkt.WriteBool(false);  // Reduced Debug Info - wtf?
 	}
@@ -677,7 +711,7 @@ void cProtocol_1_8_0::SendLoginSuccess(void)
 
 	{
 		cPacketizer Pkt(*this, 0x02);  // Login success packet
-		Pkt.WriteString(cMojangAPI::MakeUUIDDashed(m_Client->GetUUID()));
+		Pkt.WriteString(m_Client->GetUUID().ToLongString());
 		Pkt.WriteString(m_Client->GetUsername());
 	}
 }
@@ -1043,10 +1077,11 @@ void cProtocol_1_8_0::SendPlayerSpawn(const cPlayer & a_Player)
 	// Called to spawn another player for the client
 	cPacketizer Pkt(*this, 0x0c);  // Spawn Player packet
 	Pkt.WriteVarInt32(a_Player.GetUniqueID());
-	Pkt.WriteUUID(cMojangAPI::MakeUUIDShort(a_Player.GetUUID()));
-	Pkt.WriteFPInt(a_Player.GetPosX());
-	Pkt.WriteFPInt(a_Player.GetPosY() + 0.001);  // The "+ 0.001" is there because otherwise the player falls through the block they were standing on.
-	Pkt.WriteFPInt(a_Player.GetPosZ());
+	Pkt.WriteUUID(a_Player.GetUUID());
+	Vector3d LastSentPos = a_Player.GetLastSentPos();
+	Pkt.WriteFPInt(LastSentPos.x);
+	Pkt.WriteFPInt(LastSentPos.y + 0.001);  // The "+ 0.001" is there because otherwise the player falls through the block they were standing on.
+	Pkt.WriteFPInt(LastSentPos.z);
 	Pkt.WriteByteAngle(a_Player.GetYaw());
 	Pkt.WriteByteAngle(a_Player.GetPitch());
 	short ItemType = a_Player.GetEquippedItem().IsEmpty() ? 0 : a_Player.GetEquippedItem().m_ItemType;
@@ -1281,9 +1316,10 @@ void cProtocol_1_8_0::SendSpawnFallingBlock(const cFallingBlock & a_FallingBlock
 	cPacketizer Pkt(*this, 0x0e);  // Spawn Object packet
 	Pkt.WriteVarInt32(a_FallingBlock.GetUniqueID());
 	Pkt.WriteBEUInt8(70);  // Falling block
-	Pkt.WriteFPInt(a_FallingBlock.GetPosX());
-	Pkt.WriteFPInt(a_FallingBlock.GetPosY());
-	Pkt.WriteFPInt(a_FallingBlock.GetPosZ());
+	Vector3d LastSentPos = a_FallingBlock.GetLastSentPos();
+	Pkt.WriteFPInt(LastSentPos.x);
+	Pkt.WriteFPInt(LastSentPos.y);
+	Pkt.WriteFPInt(LastSentPos.z);
 	Pkt.WriteByteAngle(a_FallingBlock.GetYaw());
 	Pkt.WriteByteAngle(a_FallingBlock.GetPitch());
 	Pkt.WriteBEInt32(static_cast<Int32>(a_FallingBlock.GetBlockType()) | (static_cast<Int32>(a_FallingBlock.GetBlockMeta()) << 12));
@@ -1303,9 +1339,10 @@ void cProtocol_1_8_0::SendSpawnMob(const cMonster & a_Mob)
 	cPacketizer Pkt(*this, 0x0f);  // Spawn Mob packet
 	Pkt.WriteVarInt32(a_Mob.GetUniqueID());
 	Pkt.WriteBEUInt8(static_cast<Byte>(a_Mob.GetMobType()));
-	Pkt.WriteFPInt(a_Mob.GetPosX());
-	Pkt.WriteFPInt(a_Mob.GetPosY());
-	Pkt.WriteFPInt(a_Mob.GetPosZ());
+	Vector3d LastSentPos = a_Mob.GetLastSentPos();
+	Pkt.WriteFPInt(LastSentPos.x);
+	Pkt.WriteFPInt(LastSentPos.y);
+	Pkt.WriteFPInt(LastSentPos.z);
 	Pkt.WriteByteAngle(a_Mob.GetPitch());
 	Pkt.WriteByteAngle(a_Mob.GetHeadYaw());
 	Pkt.WriteByteAngle(a_Mob.GetYaw());
@@ -1359,9 +1396,10 @@ void cProtocol_1_8_0::SendSpawnVehicle(const cEntity & a_Vehicle, char a_Vehicle
 	cPacketizer Pkt(*this, 0xe);  // Spawn Object packet
 	Pkt.WriteVarInt32(a_Vehicle.GetUniqueID());
 	Pkt.WriteBEUInt8(static_cast<UInt8>(a_VehicleType));
-	Pkt.WriteFPInt(a_Vehicle.GetPosX());
-	Pkt.WriteFPInt(a_Vehicle.GetPosY());
-	Pkt.WriteFPInt(a_Vehicle.GetPosZ());
+	Vector3d LastSentPos = a_Vehicle.GetLastSentPos();
+	Pkt.WriteFPInt(LastSentPos.x);
+	Pkt.WriteFPInt(LastSentPos.y);
+	Pkt.WriteFPInt(LastSentPos.z);
 	Pkt.WriteByteAngle(a_Vehicle.GetPitch());
 	Pkt.WriteByteAngle(a_Vehicle.GetYaw());
 	Pkt.WriteBEInt32(a_VehicleSubType);
@@ -1514,6 +1552,7 @@ void cProtocol_1_8_0::SendUpdateBlockEntity(cBlockEntity & a_BlockEntity)
 		case E_BLOCK_BEACON:        Action = 3; break;  // Update beacon entity
 		case E_BLOCK_HEAD:          Action = 4; break;  // Update Mobhead entity
 		case E_BLOCK_FLOWER_POT:    Action = 5; break;  // Update flower pot
+		case E_BLOCK_BED:           Action = 11; break;  // Update bed color
 		default: ASSERT(!"Unhandled or unimplemented BlockEntity update request!"); break;
 	}
 	Pkt.WriteBEUInt8(Action);
@@ -1640,7 +1679,8 @@ void cProtocol_1_8_0::SendWindowOpen(const cWindow & a_Window)
 
 	if (a_Window.GetWindowType() == cWindow::wtAnimalChest)
 	{
-		Pkt.WriteBEInt32(0);  // TODO: The animal's EntityID
+		UInt32 HorseID = static_cast<const cHorseWindow &>(a_Window).GetHorseID();
+		Pkt.WriteBEInt32(static_cast<Int32>(HorseID));
 	}
 }
 
@@ -2110,8 +2150,8 @@ void cProtocol_1_8_0::HandlePacketStatusRequest(cByteBuffer & a_ByteBuffer)
 {
 	cServer * Server = cRoot::Get()->GetServer();
 	AString ServerDescription = Server->GetDescription();
-	int NumPlayers = Server->GetNumPlayers();
-	int MaxPlayers = Server->GetMaxPlayers();
+	auto NumPlayers = static_cast<signed>(Server->GetNumPlayers());
+	auto MaxPlayers = static_cast<signed>(Server->GetMaxPlayers());
 	AString Favicon = Server->GetFaviconData();
 	cRoot::Get()->GetPluginManager()->CallHookServerPing(*m_Client, ServerDescription, NumPlayers, MaxPlayers, Favicon);
 
@@ -2135,6 +2175,7 @@ void cProtocol_1_8_0::HandlePacketStatusRequest(cByteBuffer & a_ByteBuffer)
 	ResponseValue["version"] = Version;
 	ResponseValue["players"] = Players;
 	ResponseValue["description"] = Description;
+	m_Client->ForgeAugmentServerListPing(ResponseValue);
 	if (!Favicon.empty())
 	{
 		ResponseValue["favicon"] = Printf("data:image/png;base64,%s", Favicon.c_str());
@@ -2389,6 +2430,7 @@ void cProtocol_1_8_0::HandlePacketEntityAction(cByteBuffer & a_ByteBuffer)
 		case 2: m_Client->HandleEntityLeaveBed(PlayerID);         break;  // Leave Bed
 		case 3: m_Client->HandleEntitySprinting(PlayerID, true);  break;  // Start sprinting
 		case 4: m_Client->HandleEntitySprinting(PlayerID, false); break;  // Stop sprinting
+		case 6: m_Client->HandleOpenHorseInventory(PlayerID);     break;  // Open horse inventory
 	}
 }
 
@@ -2523,7 +2565,7 @@ void cProtocol_1_8_0::HandlePacketSlotSelect(cByteBuffer & a_ByteBuffer)
 
 void cProtocol_1_8_0::HandlePacketSpectate(cByteBuffer &a_ByteBuffer)
 {
-	AString playerUUID;
+	cUUID playerUUID;
 	if (!a_ByteBuffer.ReadUUID(playerUUID))
 	{
 		return;
@@ -2690,6 +2732,9 @@ void cProtocol_1_8_0::HandlePacketWindowClick(cByteBuffer & a_ByteBuffer)
 		case 0x0504: Action = (SlotNum == SLOT_NUM_OUTSIDE) ? caRightPaintBegin              : caUnknown;     break;
 		case 0x0505: Action = (SlotNum != SLOT_NUM_OUTSIDE) ? caRightPaintProgress           : caUnknown;     break;
 		case 0x0506: Action = (SlotNum == SLOT_NUM_OUTSIDE) ? caRightPaintEnd                : caUnknown;     break;
+		case 0x0508: Action = (SlotNum == SLOT_NUM_OUTSIDE) ? caMiddlePaintBegin             : caUnknown;     break;
+		case 0x0509: Action = (SlotNum != SLOT_NUM_OUTSIDE) ? caMiddlePaintProgress          : caUnknown;     break;
+		case 0x050a: Action = (SlotNum == SLOT_NUM_OUTSIDE) ? caMiddlePaintEnd               : caUnknown;     break;
 		case 0x0600: Action = caDblClick; break;
 		default:
 		{
@@ -2848,7 +2893,9 @@ void cProtocol_1_8_0::ParseItemMetadata(cItem & a_Item, const AString & a_Metada
 	{
 		AString HexDump;
 		CreateHexDump(HexDump, a_Metadata.data(), std::max<size_t>(a_Metadata.size(), 1024), 16);
-		LOGWARNING("Cannot parse NBT item metadata: (" SIZE_T_FMT " bytes)\n%s", a_Metadata.size(), HexDump.c_str());
+		LOGWARNING("Cannot parse NBT item metadata: %s at (" SIZE_T_FMT " / " SIZE_T_FMT " bytes)\n%s",
+			NBT.GetErrorCode().message().c_str(), NBT.GetErrorPos(), a_Metadata.size(), HexDump.c_str()
+		);
 		return;
 	}
 
@@ -2878,14 +2925,10 @@ void cProtocol_1_8_0::ParseItemMetadata(cItem & a_Item, const AString & a_Metada
 						}
 						else if ((NBT.GetType(displaytag) == TAG_List) && (NBT.GetName(displaytag) == "Lore"))  // Lore tag
 						{
-							AString Lore;
-
 							for (int loretag = NBT.GetFirstChild(displaytag); loretag >= 0; loretag = NBT.GetNextSibling(loretag))  // Loop through array of strings
 							{
-								AppendPrintf(Lore, "%s`", NBT.GetString(loretag).c_str());  // Append the lore with a grave accent / backtick, used internally by MCS to display a new line in the client; don't forget to c_str ;)
+								a_Item.m_LoreTable.push_back(NBT.GetString(loretag));
 							}
-
-							a_Item.m_Lore = Lore;
 						}
 						else if ((NBT.GetType(displaytag) == TAG_Int) && (NBT.GetName(displaytag) == "color"))
 						{
@@ -3074,15 +3117,9 @@ void cProtocol_1_8_0::WriteItem(cPacketizer & a_Pkt, const cItem & a_Item)
 		{
 			Writer.BeginList("Lore", TAG_String);
 
-			AStringVector Decls = StringSplit(a_Item.m_Lore, "`");
-			for (AStringVector::const_iterator itr = Decls.begin(), end = Decls.end(); itr != end; ++itr)
+			for (const auto & Line : a_Item.m_LoreTable)
 			{
-				if (itr->empty())
-				{
-					// The decl is empty (two `s), ignore
-					continue;
-				}
-				Writer.AddString("", itr->c_str());
+				Writer.AddString("", Line);
 			}
 
 			Writer.EndList();
@@ -3158,9 +3195,9 @@ void cProtocol_1_8_0::WriteBlockEntity(cPacketizer & a_Pkt, const cBlockEntity &
 			Writer.AddByte("Rot", MobHeadEntity.GetRotation() & 0xFF);
 			Writer.AddString("id", "Skull");  // "Tile Entity ID" - MC wiki; vanilla server always seems to send this though
 
-			// The new Block Entity format for a Mob Head. See: http://minecraft.gamepedia.com/Head#Block_entity
+			// The new Block Entity format for a Mob Head. See: https://minecraft.gamepedia.com/Head#Block_entity
 			Writer.BeginCompound("Owner");
-				Writer.AddString("Id", MobHeadEntity.GetOwnerUUID());
+				Writer.AddString("Id", MobHeadEntity.GetOwnerUUID().ToShortString());
 				Writer.AddString("Name", MobHeadEntity.GetOwnerName());
 				Writer.BeginCompound("Properties");
 					Writer.BeginList("textures", TAG_Compound);
@@ -3380,6 +3417,22 @@ void cProtocol_1_8_0::WriteMobMetadata(cPacketizer & a_Pkt, const cMonster & a_M
 			break;
 		}  // case mtBat
 
+		case mtChicken:
+		{
+			auto & Chicken = reinterpret_cast<const cChicken &>(a_Mob);
+			a_Pkt.WriteBEUInt8(0x0c);
+			a_Pkt.WriteBEInt8(Chicken.IsBaby() ? -1 : (Chicken.IsInLoveCooldown() ? 1 : 0));
+			break;
+		}  // case mtChicken
+
+		case mtCow:
+		{
+			auto & Cow = reinterpret_cast<const cCow &>(a_Mob);
+			a_Pkt.WriteBEUInt8(0x0c);
+			a_Pkt.WriteBEInt8(Cow.IsBaby() ? -1 : (Cow.IsInLoveCooldown() ? 1 : 0));
+			break;
+		}  // case mtCow
+
 		case mtCreeper:
 		{
 			auto & Creeper = reinterpret_cast<const cCreeper &>(a_Mob);
@@ -3469,22 +3522,6 @@ void cProtocol_1_8_0::WriteMobMetadata(cPacketizer & a_Pkt, const cMonster & a_M
 			a_Pkt.WriteBEInt8(Ocelot.IsBaby() ? -1 : (Ocelot.IsInLoveCooldown() ? 1 : 0));
 			break;
 		}  // case mtOcelot
-
-		case mtCow:
-		{
-			auto & Cow = reinterpret_cast<const cCow &>(a_Mob);
-			a_Pkt.WriteBEUInt8(0x0c);
-			a_Pkt.WriteBEInt8(Cow.IsBaby() ? -1 : (Cow.IsInLoveCooldown() ? 1 : 0));
-			break;
-		}  // case mtCow
-
-		case mtChicken:
-		{
-			auto & Chicken = reinterpret_cast<const cChicken &>(a_Mob);
-			a_Pkt.WriteBEUInt8(0x0c);
-			a_Pkt.WriteBEInt8(Chicken.IsBaby() ? -1 : (Chicken.IsInLoveCooldown() ? 1 : 0));
-			break;
-		}  // case mtChicken
 
 		case mtPig:
 		{
@@ -3616,6 +3653,8 @@ void cProtocol_1_8_0::WriteMobMetadata(cPacketizer & a_Pkt, const cMonster & a_M
 			a_Pkt.WriteBEInt8(ZombiePigman.IsBaby() ? 1 : -1);
 			break;
 		}  // case mtZombiePigman
+
+		default: break;
 	}  // switch (a_Mob.GetType())
 }
 

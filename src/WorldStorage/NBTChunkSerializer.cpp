@@ -5,12 +5,13 @@
 #include "Globals.h"
 #include "NBTChunkSerializer.h"
 #include "EnchantmentSerializer.h"
-#include "../BlockID.h"
 #include "../ItemGrid.h"
 #include "../StringCompression.h"
+#include "../UUID.h"
 #include "FastNBT.h"
 
 #include "../BlockEntities/BeaconEntity.h"
+#include "../BlockEntities/BedEntity.h"
 #include "../BlockEntities/BrewingstandEntity.h"
 #include "../BlockEntities/ChestEntity.h"
 #include "../BlockEntities/CommandBlockEntity.h"
@@ -37,6 +38,7 @@
 #include "../Entities/ExpOrb.h"
 #include "../Entities/HangingEntity.h"
 #include "../Entities/ItemFrame.h"
+#include "../Entities/LeashKnot.h"
 #include "../Entities/Painting.h"
 
 #include "../Mobs/IncludeAllMonsters.h"
@@ -66,11 +68,11 @@ void cNBTChunkSerializer::Finish(void)
 		m_Writer.EndList();
 	}
 
-	// If light not valid, reset it to all zeroes:
+	// If light not valid, reset it to defaults:
 	if (!m_IsLightValid)
 	{
-		memset(m_BlockLight,    0, sizeof(m_BlockLight));
-		memset(m_BlockSkyLight, 0, sizeof(m_BlockSkyLight));
+		m_Data.FillBlockLight(0x00);
+		m_Data.FillSkyLight(0x0f);
 	}
 
 	// Check if "Entity" and "TileEntities" lists exists. MCEdit requires this.
@@ -107,7 +109,7 @@ void cNBTChunkSerializer::AddItem(const cItem & a_Item, int a_Slot, const AStrin
 		((a_Item.m_ItemType == E_ITEM_FIREWORK_ROCKET) || (a_Item.m_ItemType == E_ITEM_FIREWORK_STAR)) ||
 		(a_Item.m_RepairCost > 0) ||
 		(a_Item.m_CustomName != "") ||
-		(a_Item.m_Lore != "")
+		(!a_Item.m_LoreTable.empty())
 	)
 	{
 		m_Writer.BeginCompound("tag");
@@ -116,16 +118,23 @@ void cNBTChunkSerializer::AddItem(const cItem & a_Item, int a_Slot, const AStrin
 				m_Writer.AddInt("RepairCost", a_Item.m_RepairCost);
 			}
 
-			if ((a_Item.m_CustomName != "") || (a_Item.m_Lore != ""))
+			if ((a_Item.m_CustomName != "") || (!a_Item.m_LoreTable.empty()))
 			{
 				m_Writer.BeginCompound("display");
 				if (a_Item.m_CustomName != "")
 				{
 					m_Writer.AddString("Name", a_Item.m_CustomName);
 				}
-				if (a_Item.m_Lore != "")
+				if (!a_Item.m_LoreTable.empty())
 				{
-					m_Writer.AddString("Lore", a_Item.m_Lore);
+					m_Writer.BeginList("Lore", TAG_String);
+
+					for (const auto & Line : a_Item.m_LoreTable)
+					{
+						m_Writer.AddString("", Line);
+					}
+
+					m_Writer.EndList();
 				}
 				m_Writer.EndCompound();
 			}
@@ -190,6 +199,18 @@ void cNBTChunkSerializer::AddBeaconEntity(cBeaconEntity * a_Entity)
 		m_Writer.BeginList("Items", TAG_Compound);
 			AddItemGrid(a_Entity->GetContents());
 		m_Writer.EndList();
+	m_Writer.EndCompound();
+}
+
+
+
+
+
+void cNBTChunkSerializer::AddBedEntity(cBedEntity * a_Entity)
+{
+	m_Writer.BeginCompound("");
+	AddBasicTileEntity(a_Entity, "Bed");
+	m_Writer.AddInt("color", a_Entity->GetColor());
 	m_Writer.EndCompound();
 }
 
@@ -360,9 +381,9 @@ void cNBTChunkSerializer::AddMobHeadEntity(cMobHeadEntity * a_MobHead)
 		m_Writer.AddByte  ("SkullType", a_MobHead->GetType() & 0xFF);
 		m_Writer.AddByte  ("Rot",       a_MobHead->GetRotation() & 0xFF);
 
-		// The new Block Entity format for a Mob Head. See: http://minecraft.gamepedia.com/Head#Block_entity
+		// The new Block Entity format for a Mob Head. See: https://minecraft.gamepedia.com/Head#Block_entity
 		m_Writer.BeginCompound("Owner");
-			m_Writer.AddString("Id", a_MobHead->GetOwnerUUID());
+			m_Writer.AddString("Id", a_MobHead->GetOwnerUUID().ToShortString());
 			m_Writer.AddString("Name", a_MobHead->GetOwnerName());
 			m_Writer.BeginCompound("Properties");
 				m_Writer.BeginList("textures", TAG_Compound);
@@ -555,6 +576,33 @@ void cNBTChunkSerializer::AddMonsterEntity(cMonster * a_Monster)
 		m_Writer.AddByte("CanPickUpLoot", (a_Monster->CanPickUpLoot())? 1 : 0);
 		m_Writer.AddString("CustomName", a_Monster->GetCustomName());
 		m_Writer.AddByte("CustomNameVisible", static_cast<Byte>(a_Monster->IsCustomNameAlwaysVisible()));
+
+		// Mob was leashed
+		if (a_Monster->IsLeashed() || (a_Monster->GetLeashToPos() != nullptr))
+		{
+			m_Writer.AddByte("Leashed", 1);
+
+			const Vector3d * LeashedToPos = nullptr;
+
+			if (a_Monster->GetLeashToPos() != nullptr)
+			{
+				LeashedToPos = a_Monster->GetLeashToPos();
+			}
+			else if (a_Monster->GetLeashedTo()->IsLeashKnot())
+			{
+				LeashedToPos = & a_Monster->GetLeashedTo()->GetPosition();
+			}
+
+			if (LeashedToPos != nullptr)
+			{
+				m_Writer.BeginCompound("Leash");
+				m_Writer.AddDouble("X", LeashedToPos->x);
+				m_Writer.AddDouble("Y", LeashedToPos->y);
+				m_Writer.AddDouble("Z", LeashedToPos->z);
+				m_Writer.EndCompound();
+			}
+		}
+
 		switch (a_Monster->GetMobType())
 		{
 			case mtBat:
@@ -595,6 +643,35 @@ void cNBTChunkSerializer::AddMonsterEntity(cMonster * a_Monster)
 				m_Writer.AddInt("Size", reinterpret_cast<const cMagmaCube *>(a_Monster)->GetSize());
 				break;
 			}
+			case mtOcelot:
+			{
+				const auto *Ocelot = reinterpret_cast<const cOcelot *>(a_Monster);
+				if (!Ocelot->GetOwnerName().empty())
+				{
+					m_Writer.AddString("Owner", Ocelot->GetOwnerName());
+				}
+				if (!Ocelot->GetOwnerUUID().IsNil())
+				{
+					m_Writer.AddString("OwnerUUID", Ocelot->GetOwnerUUID().ToShortString());
+				}
+				m_Writer.AddByte("Sitting", Ocelot->IsSitting() ? 1 : 0);
+				m_Writer.AddInt("CatType", Ocelot->GetOcelotType());
+				m_Writer.AddInt("Age", Ocelot->GetAge());
+				break;
+			}
+			case mtPig:
+			{
+				m_Writer.AddInt("Age", reinterpret_cast<const cPig *>(a_Monster)->GetAge());
+				break;
+			}
+			case mtRabbit:
+			{
+				const cRabbit * Rabbit = reinterpret_cast<const cRabbit *>(a_Monster);
+				m_Writer.AddInt("RabbitType", static_cast<Int32>(Rabbit->GetRabbitType()));
+				m_Writer.AddInt("MoreCarrotTicks", Rabbit->GetMoreCarrotTicks());
+				m_Writer.AddInt("Age", Rabbit->GetAge());
+				break;
+			}
 			case mtSheep:
 			{
 				const cSheep *Sheep = reinterpret_cast<const cSheep *>(a_Monster);
@@ -632,9 +709,9 @@ void cNBTChunkSerializer::AddMonsterEntity(cMonster * a_Monster)
 				{
 					m_Writer.AddString("Owner", Wolf->GetOwnerName());
 				}
-				if (!Wolf->GetOwnerUUID().empty())
+				if (!Wolf->GetOwnerUUID().IsNil())
 				{
-					m_Writer.AddString("OwnerUUID", Wolf->GetOwnerUUID());
+					m_Writer.AddString("OwnerUUID", Wolf->GetOwnerUUID().ToShortString());
 				}
 				m_Writer.AddByte("Sitting",     Wolf->IsSitting() ? 1 : 0);
 				m_Writer.AddByte("Angry",       Wolf->IsAngry() ? 1 : 0);
@@ -655,25 +732,6 @@ void cNBTChunkSerializer::AddMonsterEntity(cMonster * a_Monster)
 				m_Writer.AddInt("Age", reinterpret_cast<const cZombiePigman *>(a_Monster)->GetAge());
 				break;
 			}
-			case mtOcelot:
-			{
-				m_Writer.AddInt("Age", reinterpret_cast<const cOcelot *>(a_Monster)->GetAge());
-				break;
-			}
-			case mtPig:
-			{
-				m_Writer.AddInt("Age", reinterpret_cast<const cPig *>(a_Monster)->GetAge());
-				break;
-			}
-			case mtRabbit:
-			{
-				const cRabbit * Rabbit = reinterpret_cast<const cRabbit *>(a_Monster);
-				m_Writer.AddInt("RabbitType",      static_cast<Int32>(Rabbit->GetRabbitType()));
-				m_Writer.AddInt("MoreCarrotTicks", Rabbit->GetMoreCarrotTicks());
-				m_Writer.AddInt("Age",             Rabbit->GetAge());
-				break;
-			}
-			case mtInvalidType:
 			case mtBlaze:
 			case mtCaveSpider:
 			case mtChicken:
@@ -691,6 +749,11 @@ void cNBTChunkSerializer::AddMonsterEntity(cMonster * a_Monster)
 			case mtWitch:
 			{
 				// Other mobs have no special tags.
+				break;
+			}
+			case mtInvalidType:
+			{
+				ASSERT(!"cNBTChunkSerializer::AddMonsterEntity: Recieved mob of invalid type");
 				break;
 			}
 		}
@@ -820,8 +883,13 @@ void cNBTChunkSerializer::AddItemFrameEntity(cItemFrame * a_ItemFrame)
 	m_Writer.EndCompound();
 }
 
-
-
+void cNBTChunkSerializer::AddLeashKnotEntity(cLeashKnot * a_LeashKnot)
+{
+	m_Writer.BeginCompound("");
+		AddBasicEntity(a_LeashKnot, "LeashKnot");
+		AddHangingEntity(a_LeashKnot);
+	m_Writer.EndCompound();
+}
 
 
 void cNBTChunkSerializer::AddPaintingEntity(cPainting * a_Painting)
@@ -935,6 +1003,7 @@ void cNBTChunkSerializer::Entity(cEntity * a_Entity)
 		case cEntity::etTNT:          AddTNTEntity         (reinterpret_cast<cTNTEntity *>       (a_Entity)); break;
 		case cEntity::etExpOrb:       AddExpOrbEntity      (reinterpret_cast<cExpOrb *>          (a_Entity)); break;
 		case cEntity::etItemFrame:    AddItemFrameEntity   (reinterpret_cast<cItemFrame *>       (a_Entity)); break;
+		case cEntity::etLeashKnot:    AddLeashKnotEntity   (reinterpret_cast<cLeashKnot *>       (a_Entity)); break;
 		case cEntity::etPainting:     AddPaintingEntity    (reinterpret_cast<cPainting *>        (a_Entity)); break;
 		case cEntity::etPlayer: return;  // Players aren't saved into the world
 		case cEntity::etFloater: return;  // Floaters aren't saved either
@@ -970,6 +1039,7 @@ void cNBTChunkSerializer::BlockEntity(cBlockEntity * a_Entity)
 	switch (a_Entity->GetBlockType())
 	{
 		case E_BLOCK_BEACON:        AddBeaconEntity      (reinterpret_cast<cBeaconEntity *>      (a_Entity)); break;
+		case E_BLOCK_BED:           AddBedEntity         (reinterpret_cast<cBedEntity *>         (a_Entity)); break;
 		case E_BLOCK_BREWING_STAND: AddBrewingstandEntity(reinterpret_cast<cBrewingstandEntity *>(a_Entity)); break;
 		case E_BLOCK_CHEST:         AddChestEntity       (reinterpret_cast<cChestEntity *>       (a_Entity), a_Entity->GetBlockType()); break;
 		case E_BLOCK_COMMAND_BLOCK: AddCommandBlockEntity(reinterpret_cast<cCommandBlockEntity *>(a_Entity)); break;

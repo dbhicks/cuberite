@@ -1,9 +1,6 @@
 
 #pragma once
 
-#include <limits>
-#include <cmath>
-
 
 
 
@@ -99,10 +96,13 @@ enum eClickAction
 	caRightClickOutsideHoldNothing,
 	caLeftPaintBegin,
 	caRightPaintBegin,
+	caMiddlePaintBegin,
 	caLeftPaintProgress,
 	caRightPaintProgress,
+	caMiddlePaintProgress,
 	caLeftPaintEnd,
 	caRightPaintEnd,
+	caMiddlePaintEnd,
 	caDblClick,
 	// Add new actions here
 	caUnknown = 255,
@@ -266,10 +266,13 @@ inline const char * ClickActionToString(int a_ClickAction)
 		case caRightClickOutsideHoldNothing: return "caRightClickOutsideHoldNothing";
 		case caLeftPaintBegin:               return "caLeftPaintBegin";
 		case caRightPaintBegin:              return "caRightPaintBegin";
+		case caMiddlePaintBegin:             return "caMiddlePaintBegin";
 		case caLeftPaintProgress:            return "caLeftPaintProgress";
 		case caRightPaintProgress:           return "caRightPaintProgress";
+		case caMiddlePaintProgress:          return "caMiddlePaintProgress";
 		case caLeftPaintEnd:                 return "caLeftPaintEnd";
 		case caRightPaintEnd:                return "caRightPaintEnd";
+		case caMiddlePaintEnd:               return "caMiddlePaintEnd";
 		case caDblClick:                     return "caDblClick";
 
 		case caUnknown:                      return "caUnknown";
@@ -411,7 +414,7 @@ inline bool IsValidBlock(int a_BlockType)
 		(a_BlockType > -1) &&
 		(a_BlockType <= E_BLOCK_MAX_TYPE_ID)
 		) ||
-		(a_BlockType == 255)  // the blocks 235-254 don't exist yet -> http://minecraft.gamepedia.com/Data_values#Block_IDs
+		(a_BlockType == 255)  // the blocks 253-254 don't exist yet -> https://minecraft.gamepedia.com/Data_values#Block_IDs
 	)
 	{
 		return true;
@@ -1171,6 +1174,25 @@ namespace ItemCategory
 			IsLeggings(a_ItemType) ||
 			IsBoots(a_ItemType)
 		);
+	}
+
+
+
+	inline bool IsHorseArmor(short a_ItemType)
+	{
+		switch (a_ItemType)
+		{
+			case E_ITEM_IRON_HORSE_ARMOR:
+			case E_ITEM_GOLD_HORSE_ARMOR:
+			case E_ITEM_DIAMOND_HORSE_ARMOR:
+			{
+				return true;
+			}
+			default:
+			{
+				return false;
+			}
+		}
 	}
 }
 

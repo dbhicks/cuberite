@@ -9,7 +9,6 @@
 
 #pragma once
 
-#include "../Bindings/PluginManager.h"
 #include "../Entities/Floater.h"
 #include "../Entities/Entity.h"
 #include "../Item.h"
@@ -21,8 +20,7 @@
 
 ////////////////////////////////////////////////////////////////////////////////
 // cFloaterCallback
-class cFloaterCallback :
-	public cEntityCallback
+class cFloaterCallback
 {
 public:
 	cFloaterCallback(void) :
@@ -31,13 +29,14 @@ public:
 	{
 	}
 
-	virtual bool Item(cEntity * a_Entity) override
+	bool operator () (cEntity & a_Entity)
 	{
-		m_CanPickup = reinterpret_cast<cFloater *>(a_Entity)->CanPickup();
-		m_Pos = Vector3d(a_Entity->GetPosX(), a_Entity->GetPosY(), a_Entity->GetPosZ());
-		m_BitePos = reinterpret_cast<cFloater *>(a_Entity)->GetBitePos();
-		m_AttachedMobID = reinterpret_cast<cFloater *>(a_Entity)->GetAttachedMobID();
-		a_Entity->Destroy(true);
+		auto & Floater = static_cast<cFloater &>(a_Entity);
+		m_CanPickup = Floater.CanPickup();
+		m_Pos = Floater.GetPosition();
+		m_BitePos = Floater.GetBitePos();
+		m_AttachedMobID = Floater.GetAttachedMobID();
+		Floater.Destroy(true);
 		return true;
 	}
 
@@ -52,33 +51,6 @@ protected:
 	UInt32 m_AttachedMobID;
 	Vector3d m_Pos;
 	Vector3d m_BitePos;
-} ;
-
-
-
-
-
-////////////////////////////////////////////////////////////////////////////////
-// cSweepEntityCallback:
-
-class cSweepEntityCallback :
-	public cEntityCallback
-{
-public:
-	cSweepEntityCallback(Vector3d a_PlayerPos) :
-		m_PlayerPos(a_PlayerPos)
-	{
-	}
-
-	virtual bool Item(cEntity * a_Entity) override
-	{
-		Vector3d Speed = m_PlayerPos - a_Entity->GetPosition();
-		a_Entity->AddSpeed(Speed);
-		return true;
-	}
-
-protected:
-	Vector3d m_PlayerPos;
 } ;
 
 
@@ -118,8 +90,13 @@ public:
 
 			if (FloaterInfo.IsAttached())
 			{
-				cSweepEntityCallback SweepEntity(a_Player->GetPosition());
-				a_World->DoWithEntityByID(FloaterInfo.GetAttachedMobID(), SweepEntity);
+				a_World->DoWithEntityByID(FloaterInfo.GetAttachedMobID(), [=](cEntity & a_Entity)
+					{
+						Vector3d Speed = a_Player->GetPosition() - a_Entity.GetPosition();
+						a_Entity.AddSpeed(Speed);
+						return true;
+					}
+				);
 			}
 			else if (FloaterInfo.CanPickup())
 			{
@@ -252,14 +229,13 @@ public:
 		}
 		else
 		{
-			cFloater * Floater = new cFloater(a_Player->GetPosX(), a_Player->GetStance(), a_Player->GetPosZ(), a_Player->GetLookVector() * 15, a_Player->GetUniqueID(), (Random.RandInt(100, 900) - static_cast<int>(a_Player->GetEquippedItem().m_Enchantments.GetLevel(cEnchantments::enchLure) * 100)));
-			if (!Floater->Initialize(*a_World))
+			auto Floater = cpp14::make_unique<cFloater>(a_Player->GetPosX(), a_Player->GetStance(), a_Player->GetPosZ(), a_Player->GetLookVector() * 15, a_Player->GetUniqueID(), (Random.RandInt(100, 900) - static_cast<int>(a_Player->GetEquippedItem().m_Enchantments.GetLevel(cEnchantments::enchLure) * 100)));
+			auto FloaterPtr = Floater.get();
+			if (!FloaterPtr->Initialize(std::move(Floater), *a_World))
 			{
-				delete Floater;
-				Floater = nullptr;
 				return false;
 			}
-			a_Player->SetIsFishing(true, Floater->GetUniqueID());
+			a_Player->SetIsFishing(true, FloaterPtr->GetUniqueID());
 		}
 		return true;
 	}

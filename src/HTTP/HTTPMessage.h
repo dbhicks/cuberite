@@ -9,7 +9,6 @@
 
 #pragma once
 
-#include "EnvelopeParser.h"
 
 
 
@@ -96,7 +95,7 @@ public:
 		// Force a virtual destructor in descendants:
 		virtual ~cUserData() {}
 	};
-	typedef SharedPtr<cUserData> cUserDataPtr;
+	typedef std::shared_ptr<cUserData> cUserDataPtr;
 
 
 	/** Creates a new instance of the class, containing the method and URL provided by the client. */

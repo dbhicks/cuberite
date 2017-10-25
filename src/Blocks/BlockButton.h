@@ -16,7 +16,7 @@ public:
 	{
 	}
 
-	virtual bool OnUse(cChunkInterface & a_ChunkInterface, cWorldInterface & a_WorldInterface, cPlayer * a_Player, int a_BlockX, int a_BlockY, int a_BlockZ, eBlockFace a_BlockFace, int a_CursorX, int a_CursorY, int a_CursorZ) override
+	virtual bool OnUse(cChunkInterface & a_ChunkInterface, cWorldInterface & a_WorldInterface, cPlayer & a_Player, int a_BlockX, int a_BlockY, int a_BlockZ, eBlockFace a_BlockFace, int a_CursorX, int a_CursorY, int a_CursorZ) override
 	{
 		NIBBLETYPE Meta = a_ChunkInterface.GetBlockMeta(a_BlockX, a_BlockY, a_BlockZ);
 
@@ -34,19 +34,19 @@ public:
 		Meta |= 0x08;
 
 		a_ChunkInterface.SetBlockMeta(a_BlockX, a_BlockY, a_BlockZ, Meta, false);
-		a_WorldInterface.WakeUpSimulators(a_BlockX, a_BlockY, a_BlockZ);
-		a_WorldInterface.GetBroadcastManager().BroadcastSoundEffect("block.stone_button.click_on", x, y, z, 0.5f, 0.6f);
+		a_WorldInterface.WakeUpSimulators({a_BlockX, a_BlockY, a_BlockZ});
+		a_WorldInterface.GetBroadcastManager().BroadcastSoundEffect("block.stone_button.click_on", {x, y, z}, 0.5f, 0.6f);
 
 		// Queue a button reset (unpress)
 		auto TickDelay = (m_BlockType == E_BLOCK_STONE_BUTTON) ? 20 : 30;
-		a_Player->GetWorld()->ScheduleTask(TickDelay, [x, y, z, a_BlockX, a_BlockY, a_BlockZ, this](cWorld & a_World)
+		a_Player.GetWorld()->ScheduleTask(TickDelay, [x, y, z, a_BlockX, a_BlockY, a_BlockZ, this](cWorld & a_World)
 			{
 				if (a_World.GetBlock(a_BlockX, a_BlockY, a_BlockZ) == m_BlockType)
 				{
 					// Block hasn't change in the meantime; set its meta
 					a_World.SetBlockMeta(a_BlockX, a_BlockY, a_BlockZ, a_World.GetBlockMeta(a_BlockX, a_BlockY, a_BlockZ) & 0x07, false);
-					a_World.WakeUpSimulators(a_BlockX, a_BlockY, a_BlockZ);
-					a_World.BroadcastSoundEffect("block.stone_button.click_off", x, y, z, 0.5f, 0.5f);
+					a_World.WakeUpSimulators({a_BlockX, a_BlockY, a_BlockZ});
+					a_World.BroadcastSoundEffect("block.stone_button.click_off", {x, y, z}, 0.5f, 0.5f);
 				}
 			}
 		);
@@ -66,7 +66,7 @@ public:
 	}
 
 	virtual bool GetPlacementBlockTypeMeta(
-		cChunkInterface & a_ChunkInterface, cPlayer * a_Player,
+		cChunkInterface & a_ChunkInterface, cPlayer & a_Player,
 		int a_BlockX, int a_BlockY, int a_BlockZ, eBlockFace a_BlockFace,
 		int a_CursorX, int a_CursorY, int a_CursorZ,
 		BLOCKTYPE & a_BlockType, NIBBLETYPE & a_BlockMeta

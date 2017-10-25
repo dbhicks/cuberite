@@ -10,7 +10,6 @@
 
 #include "WorldStorage.h"
 #include "FastNBT.h"
-#include "../Mobs/Monster.h"
 
 
 
@@ -18,10 +17,10 @@
 
 // fwd: ItemGrid.h
 class cItemGrid;
-
+class cMonster;
 class cProjectileEntity;
 class cHangingEntity;
-class cWolf;
+class cUUID;
 
 
 
@@ -156,6 +155,7 @@ protected:
 	bool CheckBlockEntityType(const cParsedNBT & a_NBT, int a_TagIdx, const AStringVector & a_ExpectedTypes, int a_BlockX, int a_BlockY, int a_BlockZ);
 
 	cBlockEntity * LoadBeaconFromNBT      (const cParsedNBT & a_NBT, int a_TagIdx, BLOCKTYPE a_BlockType, NIBBLETYPE a_BlockMeta, int a_BlockX, int a_BlockY, int a_BlockZ);
+	cBlockEntity * LoadBedFromNBT         (const cParsedNBT & a_NBT, int a_TagIdx, BLOCKTYPE a_BlockType, NIBBLETYPE a_BlockMeta, int a_BlockX, int a_BlockY, int a_BlockZ);
 	cBlockEntity * LoadBrewingstandFromNBT(const cParsedNBT & a_NBT, int a_TagIdx, BLOCKTYPE a_BlockType, NIBBLETYPE a_BlockMeta, int a_BlockX, int a_BlockY, int a_BlockZ);
 	cBlockEntity * LoadChestFromNBT       (const cParsedNBT & a_NBT, int a_TagIdx, BLOCKTYPE a_BlockType, NIBBLETYPE a_BlockMeta, int a_BlockX, int a_BlockY, int a_BlockZ);
 	cBlockEntity * LoadCommandBlockFromNBT(const cParsedNBT & a_NBT, int a_TagIdx, BLOCKTYPE a_BlockType, NIBBLETYPE a_BlockMeta, int a_BlockX, int a_BlockY, int a_BlockZ);
@@ -180,8 +180,10 @@ protected:
 	void LoadExpOrbFromNBT          (cEntityList & a_Entities, const cParsedNBT & a_NBT, int a_TagIdx);
 	void LoadHangingFromNBT         (cHangingEntity & a_Hanging, const cParsedNBT & a_NBT, int a_TagIdx);
 	void LoadItemFrameFromNBT       (cEntityList & a_Entities, const cParsedNBT & a_NBT, int a_TagIdx);
+	void LoadLeashKnotFromNBT       (cEntityList & a_Entities, const cParsedNBT & a_NBT, int a_TagIdx);
 	void LoadPaintingFromNBT        (cEntityList & a_Entities, const cParsedNBT & a_NBT, int a_TagIdx);
 
+	void LoadOldMinecartFromNBT     (cEntityList & a_Entities, const cParsedNBT & a_NBT, int a_TagIdx);
 	void LoadMinecartRFromNBT       (cEntityList & a_Entities, const cParsedNBT & a_NBT, int a_TagIdx);
 	void LoadMinecartCFromNBT       (cEntityList & a_Entities, const cParsedNBT & a_NBT, int a_TagIdx);
 	void LoadMinecartFFromNBT       (cEntityList & a_Entities, const cParsedNBT & a_NBT, int a_TagIdx);
@@ -228,14 +230,18 @@ protected:
 	void LoadZombieFromNBT          (cEntityList & a_Entities, const cParsedNBT & a_NBT, int a_TagIdx);
 	void LoadPigZombieFromNBT       (cEntityList & a_Entities, const cParsedNBT & a_NBT, int a_TagIdx);
 
-	/** Loads the wolf's owner information from the NBT into the specified wolf entity. */
-	void LoadWolfOwner(cWolf & a_Wolf, const cParsedNBT & a_NBT, int a_TagIdx);
+	/** Loads the owner name and UUID from the entity at the specified NBT tag.
+	Returns a pair of {name, uuid}. If the entity is not owned, name is an empty string and uuid is nil. */
+	std::pair<AString, cUUID> LoadEntityOwner(const cParsedNBT & a_NBT, int a_TagIdx);
 
 	/** Loads entity common data from the NBT compound; returns true if successful */
 	bool LoadEntityBaseFromNBT(cEntity & a_Entity, const cParsedNBT & a_NBT, int a_TagIdx);
 
 	/** Loads monster common data from the NBT compound; returns true if successful */
 	bool LoadMonsterBaseFromNBT(cMonster & a_Monster, const cParsedNBT & a_NBT, int a_TagIdx);
+
+	/** Loads the position to where is leashed the monster */
+	void LoadLeashToPosition(cMonster & a_Monster, const cParsedNBT & a_NBT, int a_TagIdx);
 
 	/** Loads projectile common data from the NBT compound; returns true if successful */
 	bool LoadProjectileBaseFromNBT(cProjectileEntity & a_Entity, const cParsedNBT & a_NBT, int a_TagIx);

@@ -260,9 +260,7 @@ void cFloodyFluidSimulator::SpreadToNeighbor(cChunk * a_NearChunk, int a_RelX, i
 
 			a_NearChunk->BroadcastSoundEffect(
 				"block.lava.extinguish",
-				static_cast<double>(BlockX),
-				static_cast<double>(a_RelY),
-				static_cast<double>(BlockZ),
+				Vector3d(BlockX, a_RelY, BlockZ),
 				0.5f,
 				1.5f
 			);
@@ -282,9 +280,7 @@ void cFloodyFluidSimulator::SpreadToNeighbor(cChunk * a_NearChunk, int a_RelX, i
 
 			a_NearChunk->BroadcastSoundEffect(
 				"block.lava.extinguish",
-				static_cast<double>(BlockX),
-				static_cast<double>(a_RelY),
-				static_cast<double>(BlockZ),
+				Vector3d(BlockX, a_RelY, BlockZ),
 				0.5f,
 				1.5f
 			);
@@ -325,7 +321,7 @@ void cFloodyFluidSimulator::SpreadToNeighbor(cChunk * a_NearChunk, int a_RelX, i
 	// Spread:
 	FLOG("  Spreading to {%d, %d, %d} with meta %d", BlockX, a_RelY, BlockZ, a_NewMeta);
 	a_NearChunk->SetBlock(a_RelX, a_RelY, a_RelZ, m_FluidBlock, a_NewMeta);
-	m_World.GetSimulatorManager()->WakeUp(BlockX, a_RelY, BlockZ, a_NearChunk);
+	m_World.GetSimulatorManager()->WakeUp({BlockX, a_RelY, BlockZ}, a_NearChunk);
 
 	HardenBlock(a_NearChunk, a_RelX, a_RelY, a_RelZ, m_FluidBlock, a_NewMeta);
 }

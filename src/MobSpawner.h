@@ -1,17 +1,8 @@
 
 #pragma once
 
-#include <set>
-#include "BlockID.h"
-#include "ChunkDef.h"
 #include "Chunk.h"
 #include "Mobs/Monster.h"  // This is a side-effect of keeping Mobfamily inside Monster class. I'd prefer to keep both (Mobfamily and Monster) inside a "Monster" namespace MG TODO : do it
-
-
-
-
-// fwd:
-class cChunk;
 
 
 
@@ -46,8 +37,10 @@ public :
 	// return true if there is at least one allowed type
 	bool CanSpawnAnything(void);
 
-	typedef const std::set<cMonster *> tSpawnedContainer;
-	tSpawnedContainer & getSpawned(void);
+	std::vector<std::unique_ptr<cMonster>> & getSpawned(void)
+	{
+		return m_Spawned;
+	}
 
 	/** Returns true if specified type of mob can spawn on specified block */
 	static bool CanSpawnHere(cChunk * a_Chunk, int a_RelX, int a_RelY, int a_RelZ, eMonsterType a_MobType, EMCSBiome a_Biome);
@@ -58,13 +51,13 @@ protected :
 	eMonsterType ChooseMobType(EMCSBiome a_Biome);
 
 	/** Adds toAdd into toAddIn, if toAdd is in m_AllowedTypes */
-	void addIfAllowed(eMonsterType toAdd, std::set<eMonsterType> & toAddIn);
+	void addIfAllowed(eMonsterType toAdd, std::vector<eMonsterType> & toAddIn);
 
 	cMonster::eFamily m_MonsterFamily;
 	std::set<eMonsterType> m_AllowedTypes;
 	bool m_NewPack;
 	eMonsterType m_MobType;
-	std::set<cMonster*> m_Spawned;
+	std::vector<std::unique_ptr<cMonster>> m_Spawned;
 } ;
 
 

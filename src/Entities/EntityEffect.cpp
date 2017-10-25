@@ -1,8 +1,9 @@
 #include "Globals.h"  // NOTE: MSVC stupidness requires this to be the same across all modules
 
 #include "EntityEffect.h"
-#include "../Mobs/Monster.h"
 #include "Player.h"
+#include "../Chunk.h"
+#include "../Mobs/Monster.h"
 
 
 
@@ -22,7 +23,7 @@ cEntityEffect::eType cEntityEffect::GetPotionEffectType(short a_ItemDamage)
 {
 	// Lowest four bits
 	// Potion effect bits are different from entity effect values
-	// For reference: http://minecraft.gamepedia.com/Data_values#.22Potion_effect.22_bits
+	// For reference: https://minecraft.gamepedia.com/Data_values#.22Potion_effect.22_bits
 	switch (a_ItemDamage & 0x0f)
 	{
 		case 0x01: return cEntityEffect::effRegeneration;
@@ -111,9 +112,9 @@ int cEntityEffect::GetPotionEffectDuration(short a_ItemDamage)
 	SplashCoeff = IsPotionDrinkable(a_ItemDamage) ? 1 : 0.75;
 
 	// Ref.:
-	//   http://minecraft.gamepedia.com/Data_values#.22Tier.22_bit
-	//   http://minecraft.gamepedia.com/Data_values#.22Extended_duration.22_bit
-	//   http://minecraft.gamepedia.com/Data_values#.22Splash_potion.22_bit
+	//   https://minecraft.gamepedia.com/Data_values#.22Tier.22_bit
+	//   https://minecraft.gamepedia.com/Data_values#.22Extended_duration.22_bit
+	//   https://minecraft.gamepedia.com/Data_values#.22Splash_potion.22_bit
 
 	return static_cast<int>(base * TierCoeff * ExtCoeff * SplashCoeff);
 }
@@ -125,7 +126,7 @@ int cEntityEffect::GetPotionEffectDuration(short a_ItemDamage)
 bool cEntityEffect::IsPotionDrinkable(short a_ItemDamage)
 {
 	// Drinkable potion if 13th lowest bit is set
-	// Ref.: http://minecraft.gamepedia.com/Potions#Data_value_table
+	// Ref.: https://minecraft.gamepedia.com/Potions#Data_value_table
 	return ((a_ItemDamage & 0x2000) != 0);
 }
 
@@ -185,40 +186,40 @@ cEntityEffect & cEntityEffect::operator =(cEntityEffect a_OtherEffect)
 
 
 
-cEntityEffect * cEntityEffect::CreateEntityEffect(cEntityEffect::eType a_EffectType, int a_Duration, short a_Intensity, double a_DistanceModifier)
+std::unique_ptr<cEntityEffect> cEntityEffect::CreateEntityEffect(cEntityEffect::eType a_EffectType, int a_Duration, short a_Intensity, double a_DistanceModifier)
 {
 	switch (a_EffectType)
 	{
-		case cEntityEffect::effNoEffect:       return new cEntityEffect              (a_Duration, a_Intensity, a_DistanceModifier);
+		case cEntityEffect::effNoEffect:       return cpp14::make_unique<cEntityEffect              >(a_Duration, a_Intensity, a_DistanceModifier);
 
-		case cEntityEffect::effAbsorption:     return new cEntityEffectAbsorption    (a_Duration, a_Intensity, a_DistanceModifier);
-		case cEntityEffect::effBlindness:      return new cEntityEffectBlindness     (a_Duration, a_Intensity, a_DistanceModifier);
-		case cEntityEffect::effFireResistance: return new cEntityEffectFireResistance(a_Duration, a_Intensity, a_DistanceModifier);
-		case cEntityEffect::effHaste:          return new cEntityEffectHaste         (a_Duration, a_Intensity, a_DistanceModifier);
-		case cEntityEffect::effHealthBoost:    return new cEntityEffectHealthBoost   (a_Duration, a_Intensity, a_DistanceModifier);
-		case cEntityEffect::effHunger:         return new cEntityEffectHunger        (a_Duration, a_Intensity, a_DistanceModifier);
-		case cEntityEffect::effInstantDamage:  return new cEntityEffectInstantDamage (a_Duration, a_Intensity, a_DistanceModifier);
-		case cEntityEffect::effInstantHealth:  return new cEntityEffectInstantHealth (a_Duration, a_Intensity, a_DistanceModifier);
-		case cEntityEffect::effInvisibility:   return new cEntityEffectInvisibility  (a_Duration, a_Intensity, a_DistanceModifier);
-		case cEntityEffect::effJumpBoost:      return new cEntityEffectJumpBoost     (a_Duration, a_Intensity, a_DistanceModifier);
-		case cEntityEffect::effMiningFatigue:  return new cEntityEffectMiningFatigue (a_Duration, a_Intensity, a_DistanceModifier);
-		case cEntityEffect::effNausea:         return new cEntityEffectNausea        (a_Duration, a_Intensity, a_DistanceModifier);
-		case cEntityEffect::effNightVision:    return new cEntityEffectNightVision   (a_Duration, a_Intensity, a_DistanceModifier);
-		case cEntityEffect::effPoison:         return new cEntityEffectPoison        (a_Duration, a_Intensity, a_DistanceModifier);
-		case cEntityEffect::effRegeneration:   return new cEntityEffectRegeneration  (a_Duration, a_Intensity, a_DistanceModifier);
-		case cEntityEffect::effResistance:     return new cEntityEffectResistance    (a_Duration, a_Intensity, a_DistanceModifier);
-		case cEntityEffect::effSaturation:     return new cEntityEffectSaturation    (a_Duration, a_Intensity, a_DistanceModifier);
-		case cEntityEffect::effSlowness:       return new cEntityEffectSlowness      (a_Duration, a_Intensity, a_DistanceModifier);
-		case cEntityEffect::effSpeed:          return new cEntityEffectSpeed         (a_Duration, a_Intensity, a_DistanceModifier);
-		case cEntityEffect::effStrength:       return new cEntityEffectStrength      (a_Duration, a_Intensity, a_DistanceModifier);
-		case cEntityEffect::effWaterBreathing: return new cEntityEffectWaterBreathing(a_Duration, a_Intensity, a_DistanceModifier);
-		case cEntityEffect::effWeakness:       return new cEntityEffectWeakness      (a_Duration, a_Intensity, a_DistanceModifier);
-		case cEntityEffect::effWither:         return new cEntityEffectWither        (a_Duration, a_Intensity, a_DistanceModifier);
+		case cEntityEffect::effAbsorption:     return cpp14::make_unique<cEntityEffectAbsorption    >(a_Duration, a_Intensity, a_DistanceModifier);
+		case cEntityEffect::effBlindness:      return cpp14::make_unique<cEntityEffectBlindness     >(a_Duration, a_Intensity, a_DistanceModifier);
+		case cEntityEffect::effFireResistance: return cpp14::make_unique<cEntityEffectFireResistance>(a_Duration, a_Intensity, a_DistanceModifier);
+		case cEntityEffect::effHaste:          return cpp14::make_unique<cEntityEffectHaste         >(a_Duration, a_Intensity, a_DistanceModifier);
+		case cEntityEffect::effHealthBoost:    return cpp14::make_unique<cEntityEffectHealthBoost   >(a_Duration, a_Intensity, a_DistanceModifier);
+		case cEntityEffect::effHunger:         return cpp14::make_unique<cEntityEffectHunger        >(a_Duration, a_Intensity, a_DistanceModifier);
+		case cEntityEffect::effInstantDamage:  return cpp14::make_unique<cEntityEffectInstantDamage >(a_Duration, a_Intensity, a_DistanceModifier);
+		case cEntityEffect::effInstantHealth:  return cpp14::make_unique<cEntityEffectInstantHealth >(a_Duration, a_Intensity, a_DistanceModifier);
+		case cEntityEffect::effInvisibility:   return cpp14::make_unique<cEntityEffectInvisibility  >(a_Duration, a_Intensity, a_DistanceModifier);
+		case cEntityEffect::effJumpBoost:      return cpp14::make_unique<cEntityEffectJumpBoost     >(a_Duration, a_Intensity, a_DistanceModifier);
+		case cEntityEffect::effMiningFatigue:  return cpp14::make_unique<cEntityEffectMiningFatigue >(a_Duration, a_Intensity, a_DistanceModifier);
+		case cEntityEffect::effNausea:         return cpp14::make_unique<cEntityEffectNausea        >(a_Duration, a_Intensity, a_DistanceModifier);
+		case cEntityEffect::effNightVision:    return cpp14::make_unique<cEntityEffectNightVision   >(a_Duration, a_Intensity, a_DistanceModifier);
+		case cEntityEffect::effPoison:         return cpp14::make_unique<cEntityEffectPoison        >(a_Duration, a_Intensity, a_DistanceModifier);
+		case cEntityEffect::effRegeneration:   return cpp14::make_unique<cEntityEffectRegeneration  >(a_Duration, a_Intensity, a_DistanceModifier);
+		case cEntityEffect::effResistance:     return cpp14::make_unique<cEntityEffectResistance    >(a_Duration, a_Intensity, a_DistanceModifier);
+		case cEntityEffect::effSaturation:     return cpp14::make_unique<cEntityEffectSaturation    >(a_Duration, a_Intensity, a_DistanceModifier);
+		case cEntityEffect::effSlowness:       return cpp14::make_unique<cEntityEffectSlowness      >(a_Duration, a_Intensity, a_DistanceModifier);
+		case cEntityEffect::effSpeed:          return cpp14::make_unique<cEntityEffectSpeed         >(a_Duration, a_Intensity, a_DistanceModifier);
+		case cEntityEffect::effStrength:       return cpp14::make_unique<cEntityEffectStrength      >(a_Duration, a_Intensity, a_DistanceModifier);
+		case cEntityEffect::effWaterBreathing: return cpp14::make_unique<cEntityEffectWaterBreathing>(a_Duration, a_Intensity, a_DistanceModifier);
+		case cEntityEffect::effWeakness:       return cpp14::make_unique<cEntityEffectWeakness      >(a_Duration, a_Intensity, a_DistanceModifier);
+		case cEntityEffect::effWither:         return cpp14::make_unique<cEntityEffectWither        >(a_Duration, a_Intensity, a_DistanceModifier);
 	}
 
 	ASSERT(!"Unhandled entity effect type!");
 	#ifndef __clang__
-		return nullptr;
+		return {};
 	#endif
 }
 
@@ -400,6 +401,22 @@ void cEntityEffectHunger::OnTick(cPawn & a_Target)
 	{
 		cPlayer & Target = reinterpret_cast<cPlayer &>(a_Target);
 		Target.AddFoodExhaustion(0.025 * (static_cast<double>(GetIntensity()) + 1.0));  // 0.5 per second = 0.025 per tick
+	}
+}
+
+
+
+
+
+////////////////////////////////////////////////////////////////////////////////
+// cEntityEffectInvisibility:
+
+void cEntityEffectInvisibility::BroadcastMetadata(cPawn & a_Target)
+{
+	auto ParentChunk = a_Target.GetParentChunk();
+	if (ParentChunk != nullptr)
+	{
+		ParentChunk->BroadcastEntityMetadata(a_Target);
 	}
 }
 

@@ -15,13 +15,13 @@
 #include "../Entities/Minecart.h"
 #include "../Items/ItemHandler.h"
 #include "AnvilWindow.h"
-#include "Window.h"
 #include "../CraftingRecipes.h"
 #include "../Root.h"
 #include "../FastRandom.h"
 #include "../BlockArea.h"
 #include "../EffectID.h"
 #include "../ClientHandle.h"
+#include "Mobs/Horse.h"
 
 
 
@@ -730,7 +730,6 @@ void cSlotAreaCrafting::UpdateRecipe(cPlayer & a_Player)
 	cCraftingRecipe & Recipe = GetRecipeForPlayer(a_Player);
 	cRoot::Get()->GetCraftingRecipes()->GetRecipe(a_Player, Grid, Recipe);
 	SetSlot(0, a_Player, Recipe.GetResult());
-	m_ParentWindow.SendSlot(a_Player, this, 0);
 }
 
 
@@ -1136,7 +1135,9 @@ void cSlotAreaAnvil::UpdateResult(cPlayer & a_Player)
 				}
 			}
 
-			// TODO: Add enchantments.
+			// Add the enchantments from the sacrifice to the target
+			int EnchantmentCost = Input.AddEnchantmentsFromItem(SecondInput);
+			NeedExp += EnchantmentCost;
 		}
 	}
 
@@ -1165,8 +1166,6 @@ void cSlotAreaAnvil::UpdateResult(cPlayer & a_Player)
 
 		Input.m_CustomName = RepairedItemName;
 	}
-
-	// TODO: Add enchantment exp cost.
 
 	m_MaximumCost = RepairCost + NeedExp;
 
@@ -1237,8 +1236,11 @@ bool cSlotAreaBeacon::IsPlaceableItem(short a_ItemType)
 		{
 			return true;
 		}
+		default:
+		{
+			return false;
+		}
 	}
-	return false;
 }
 
 
@@ -2408,8 +2410,8 @@ bool cSlotAreaArmor::CanPlaceArmorInSlot(int a_SlotNum, const cItem & a_Item)
 		case 1:  return ItemCategory::IsChestPlate(a_Item.m_ItemType);
 		case 2:  return ItemCategory::IsLeggings(a_Item.m_ItemType);
 		case 3:  return ItemCategory::IsBoots(a_Item.m_ItemType);
+		default: return false;
 	}
-	return false;
 }
 
 
@@ -2522,6 +2524,8 @@ void cSlotAreaTemporary::SetSlot(int a_SlotNum, cPlayer & a_Player, const cItem 
 	}
 
 	itr->second[static_cast<size_t>(a_SlotNum)] = a_Item;
+
+	m_ParentWindow.SendSlot(a_Player, this, a_SlotNum);
 }
 
 
@@ -2587,6 +2591,124 @@ cItem * cSlotAreaTemporary::GetPlayerSlots(cPlayer & a_Player)
 		return nullptr;
 	}
 	return itr->second.data();
+}
+
+
+
+
+
+////////////////////////////////////////////////////////////////////////////////
+// cSlotAreaHorse:
+
+cSlotAreaHorse::cSlotAreaHorse(cHorse & a_Horse, cWindow & a_ParentWindow) :
+	cSlotArea(2, a_ParentWindow),
+	m_Horse(a_Horse)
+{
+}
+
+
+
+
+
+void cSlotAreaHorse::Clicked(cPlayer & a_Player, int a_SlotNum, eClickAction a_ClickAction, const cItem & a_ClickedItem)
+{
+	cItem & DraggingItem = a_Player.GetDraggingItem();
+
+	switch (a_ClickAction)
+	{
+		case caLeftClick:
+		case caRightClick:
+		case caDblClick:
+		{
+			// Check for invalid item types
+			if (DraggingItem.IsEmpty())
+			{
+				break;
+			}
+
+			switch (a_SlotNum)
+			{
+				case SaddleSlot:
+				{
+					if (DraggingItem.m_ItemType != E_ITEM_SADDLE)
+					{
+						return;
+					}
+				}
+				case ArmorSlot:
+				{
+					if (!ItemCategory::IsHorseArmor(DraggingItem.m_ItemType))
+					{
+						return;
+					}
+				}
+				default: break;
+			}
+		}
+		default: break;
+	}
+
+	cSlotArea::Clicked(a_Player, a_SlotNum, a_ClickAction, a_ClickedItem);
+}
+
+
+
+
+
+const cItem * cSlotAreaHorse::GetSlot(int a_SlotNum, cPlayer & a_Player) const
+{
+	static const cItem InvalidItem;
+	switch (a_SlotNum)
+	{
+		case SaddleSlot: return &m_Horse.GetHorseSaddle();
+		case ArmorSlot:  return &m_Horse.GetHorseArmorItem();
+		default:
+		{
+			LOGWARN("cSlotAreaHorse::GetSlot: Invalid slot number %d", a_SlotNum);
+			return &InvalidItem;
+		}
+	}
+}
+
+
+
+
+
+void cSlotAreaHorse::SetSlot(int a_SlotNum, cPlayer & a_Player, const cItem & a_Item)
+{
+	switch (a_SlotNum)
+	{
+		case SaddleSlot: m_Horse.SetHorseSaddle(a_Item); break;
+		case ArmorSlot:  m_Horse.SetHorseArmor(a_Item);  break;
+		default:
+		{
+			LOGWARN("cSlotAreaHorse::SetSlot: Invalid slot number %d", a_SlotNum);
+		}
+	}
+}
+
+
+
+
+
+void cSlotAreaHorse::DistributeStack(cItem & a_ItemStack, cPlayer & a_Player, bool a_ShouldApply, bool a_KeepEmptySlots, bool a_BackFill)
+{
+	if (ItemCategory::IsHorseArmor(a_ItemStack.m_ItemType) && m_Horse.GetHorseArmorItem().IsEmpty())
+	{
+		if (a_ShouldApply)
+		{
+			m_Horse.SetHorseArmor(a_ItemStack.CopyOne());
+		}
+		--a_ItemStack.m_ItemCount;
+	}
+	else if ((a_ItemStack.m_ItemType == E_ITEM_SADDLE) && !m_Horse.IsSaddled())
+	{
+		if (a_ShouldApply)
+		{
+			m_Horse.SetHorseSaddle(a_ItemStack.CopyOne());
+		}
+		--a_ItemStack.m_ItemCount;
+	}
 }
 
 
